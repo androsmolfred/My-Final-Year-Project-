@@ -1,0 +1,553 @@
+
+[2026-05-02 15:36:29]
+  Image         : NigCar_1.jpg
+  Plate Number  : KRD-479-DR
+  State         : Unknown
+  Confidence    : 95.79%
+  ────────────────────────────────────────
+
+[2026-05-02 15:36:33]
+  Image         : NigCar_10.jpg
+  Plate Number  : APP-767-LO
+  State         : Lagos
+  Confidence    : 99.24%
+  ────────────────────────────────────────
+
+[2026-05-02 15:36:38]
+  Image         : NigCar_11.jpg
+  Plate Number  : KRD-479-DR
+  State         : Edo
+  Confidence    : 90.98%
+  ────────────────────────────────────────
+
+[2026-05-02 15:36:43]
+  Image         : NigCar_12.jpg
+  Plate Number  : RSH-850-GO
+  State         : Abuja
+  Confidence    : 94.21%
+  ────────────────────────────────────────
+
+[2026-05-02 15:36:45]
+  Image         : NigCar_13.png
+  Plate Number  : GGE-557-JV
+  State         : Unknown
+  Confidence    : 98.28%
+  ────────────────────────────────────────
+
+[2026-05-02 15:36:46]
+  Image         : NigCar_14.png
+  Plate Number  : AFZ-169-EA
+  State         : Unknown
+  Confidence    : 98.66%
+  ────────────────────────────────────────
+
+[2026-05-02 15:36:47]
+  Image         : NigCar_15.png
+  Plate Number  : RGB-570-MB
+  State         : Gombe
+  Confidence    : 88.63%
+  ────────────────────────────────────────
+
+[2026-05-02 15:36:49]
+  Image         : NigCar_16.jpeg
+  Plate Number  : LND-741-HE
+  State         : Unknown
+  Confidence    : 99.49%
+  ────────────────────────────────────────
+
+[2026-05-02 15:36:50]
+  Image         : NigCar_16.png
+  Plate Number  : GGE-934-HD
+  State         : Edo
+  Confidence    : 99.3%
+  ────────────────────────────────────────
+
+[2026-05-02 15:36:52]
+  Image         : NigCar_17.jpeg
+  Plate Number  : AKD-485-HV
+  State         : Lagos
+  Confidence    : 98.11%
+  ────────────────────────────────────────
+
+[2026-05-02 15:36:54]
+  Image         : NigCar_17.png
+  Plate Number  : DEK-367-AE
+  State         : Delta
+  Confidence    : 96.15%
+  ────────────────────────────────────────
+
+[2026-05-02 15:36:57]
+  Image         : NigCar_18.jpeg
+  Plate Number  : KTU-674-AW
+  State         : Lagos
+  Confidence    : 83.15%
+  ────────────────────────────────────────
+
+[2026-05-02 15:37:00]
+  Image         : NigCar_18.png
+  Plate Number  : FST-709-OD
+  State         : Unknown
+  Confidence    : 93.67%
+  ────────────────────────────────────────
+
+[2026-05-02 15:37:01]
+  Image         : NigCar_19.png
+  Plate Number  : JTA-781-EJ
+  State         : Unknown
+  Confidence    : 90.85%
+  ────────────────────────────────────────
+
+[2026-05-02 15:37:02]
+  Image         : NigCar_20.png
+  Plate Number  : JJJ-771-JK
+  State         : Unknown
+  Confidence    : 94.13%
+  ────────────────────────────────────────
+
+[2026-05-02 15:37:05]
+  Image         : NigCar_21.jpeg
+  Plate Number  : LSR-882-JF
+  State         : Lagos
+  Confidence    : 99.61%
+  ────────────────────────────────────────
+
+[2026-05-02 15:37:15]
+  Image         : NigCar_3.jpg
+  Plate Number  : GAG-050-EN
+  State         : Ogun
+  Confidence    : 91.77%
+  ────────────────────────────────────────
+
+[2026-05-02 15:37:19]
+  Image         : NigCar_4.jpg
+  Plate Number  : GOL-768-OO
+  State         : Niger
+  Confidence    : 89.36%
+  ────────────────────────────────────────
+
+[2026-05-02 15:37:21]
+  Image         : NigCar_5.jpg
+  Plate Number  : SGB-464-AG
+  State         : Osun
+  Confidence    : 92.76%
+  ────────────────────────────────────────
+
+[2026-05-02 15:37:25]
+  Image         : NigCar_6.jpg
+  Plate Number  : LRA-113-PO
+  State         : Abuja
+  Confidence    : 94.68%
+  ────────────────────────────────────────
+
+[2026-05-02 15:37:32]
+  Image         : NigCar_9.jpg
+  Plate Number  : Not Found
+  State         : Niger
+  Confidence    : 80.47%
+  ────────────────────────────────────────
+
+[2026-05-02 15:42:07]
+  Image         : NigCar_1.jpg
+  Plate Number  : KRD-479-DR
+  State         : Unknown
+  Confidence    : 95.79%
+  ────────────────────────────────────────
+
+[2026-05-02 15:42:10]
+  Image         : NigCar_10.jpg
+  Plate Number  : APP-767-IO
+  State         : Lagos
+  Confidence    : 90.86%
+  ────────────────────────────────────────
+
+[2026-05-02 15:42:19]
+  Image         : NigCar_11.jpg
+  Plate Number  : EEX-031-IE
+  State         : Edo
+  Confidence    : 92.06%
+  ────────────────────────────────────────
+
+[2026-05-02 15:42:25]
+  Image         : NigCar_12.jpg
+  Plate Number  : RSH-850-GO
+  State         : Abuja
+  Confidence    : 94.21%
+  ────────────────────────────────────────
+
+[2026-05-02 15:42:26]
+  Image         : NigCar_13.png
+  Plate Number  : GGE-557-JV
+  State         : Unknown
+  Confidence    : 98.28%
+  ────────────────────────────────────────
+
+[2026-05-02 15:42:27]
+  Image         : NigCar_14.png
+  Plate Number  : AFZ-169-EA
+  State         : Unknown
+  Confidence    : 98.66%
+  ────────────────────────────────────────
+
+[2026-05-02 15:42:28]
+  Image         : NigCar_15.png
+  Plate Number  : RGB-570-MB
+  State         : Gombe
+  Confidence    : 88.63%
+  ────────────────────────────────────────
+
+[2026-05-02 15:42:30]
+  Image         : NigCar_16.jpeg
+  Plate Number  : LND-741-HE
+  State         : Unknown
+  Confidence    : 99.49%
+  ────────────────────────────────────────
+
+[2026-05-02 15:42:31]
+  Image         : NigCar_16.png
+  Plate Number  : GGE-934-HD
+  State         : Edo
+  Confidence    : 99.3%
+  ────────────────────────────────────────
+
+[2026-05-02 15:42:33]
+  Image         : NigCar_17.jpeg
+  Plate Number  : AKD-485-HV
+  State         : Lagos
+  Confidence    : 98.11%
+  ────────────────────────────────────────
+
+[2026-05-02 15:42:34]
+  Image         : NigCar_17.png
+  Plate Number  : DEK-367-AE
+  State         : Delta
+  Confidence    : 96.15%
+  ────────────────────────────────────────
+
+[2026-05-02 15:42:37]
+  Image         : NigCar_18.jpeg
+  Plate Number  : KTU-674-AW
+  State         : Lagos
+  Confidence    : 83.15%
+  ────────────────────────────────────────
+
+[2026-05-02 15:42:38]
+  Image         : NigCar_18.png
+  Plate Number  : FST-709-OD
+  State         : Unknown
+  Confidence    : 93.67%
+  ────────────────────────────────────────
+
+[2026-05-02 15:42:39]
+  Image         : NigCar_19.png
+  Plate Number  : JTA-781-EJ
+  State         : Unknown
+  Confidence    : 90.85%
+  ────────────────────────────────────────
+
+[2026-05-02 15:42:40]
+  Image         : NigCar_20.png
+  Plate Number  : JJJ-771-JK
+  State         : Unknown
+  Confidence    : 94.13%
+  ────────────────────────────────────────
+
+[2026-05-02 15:42:42]
+  Image         : NigCar_21.jpeg
+  Plate Number  : LSR-882-JF
+  State         : Lagos
+  Confidence    : 99.61%
+  ────────────────────────────────────────
+
+[2026-05-02 15:42:51]
+  Image         : NigCar_3.jpg
+  Plate Number  : GAG-050-EN
+  State         : Ogun
+  Confidence    : 91.77%
+  ────────────────────────────────────────
+
+[2026-05-02 15:42:54]
+  Image         : NigCar_4.jpg
+  Plate Number  : GOL-768-OO
+  State         : Niger
+  Confidence    : 89.36%
+  ────────────────────────────────────────
+
+[2026-05-02 15:42:57]
+  Image         : NigCar_5.jpg
+  Plate Number  : SGB-464-AG
+  State         : Osun
+  Confidence    : 92.76%
+  ────────────────────────────────────────
+
+[2026-05-02 15:43:01]
+  Image         : NigCar_6.jpg
+  Plate Number  : LRA-113-PO
+  State         : Abuja
+  Confidence    : 94.68%
+  ────────────────────────────────────────
+
+[2026-05-02 15:43:07]
+  Image         : NigCar_9.jpg
+  Plate Number  : Not Found
+  State         : Niger
+  Confidence    : 80.47%
+  ────────────────────────────────────────
+
+[2026-05-02 16:03:28]
+  Image         : NigCar_1.jpg
+  Plate Number  : KRD-479-DR
+  State         : Unknown
+  Confidence    : 95.79%
+  ────────────────────────────────────────
+
+[2026-05-02 16:03:31]
+  Image         : NigCar_10.jpg
+  Plate Number  : APP-767-IO
+  State         : Lagos
+  Confidence    : 90.86%
+  ────────────────────────────────────────
+
+[2026-05-02 16:03:32]
+  Image         : NigCar_11.png
+  Plate Number  : Not Found
+  State         : Unknown
+  Confidence    : 0.0%
+  ────────────────────────────────────────
+
+[2026-05-02 16:03:38]
+  Image         : NigCar_12.jpg
+  Plate Number  : RSH-850-GO
+  State         : Abuja
+  Confidence    : 94.21%
+  ────────────────────────────────────────
+
+[2026-05-02 16:03:41]
+  Image         : NigCar_13.jpeg
+  Plate Number  : KTU-674-AW
+  State         : Lagos
+  Confidence    : 83.15%
+  ────────────────────────────────────────
+
+[2026-05-02 16:03:42]
+  Image         : NigCar_14.png
+  Plate Number  : AFZ-169-EA
+  State         : Unknown
+  Confidence    : 98.66%
+  ────────────────────────────────────────
+
+[2026-05-02 16:03:44]
+  Image         : NigCar_15.png
+  Plate Number  : RGB-570-MB
+  State         : Gombe
+  Confidence    : 88.63%
+  ────────────────────────────────────────
+
+[2026-05-02 16:03:45]
+  Image         : NigCar_16.jpeg
+  Plate Number  : LND-741-HE
+  State         : Unknown
+  Confidence    : 99.49%
+  ────────────────────────────────────────
+
+[2026-05-02 16:03:47]
+  Image         : NigCar_17.jpeg
+  Plate Number  : AKD-485-HV
+  State         : Lagos
+  Confidence    : 98.11%
+  ────────────────────────────────────────
+
+[2026-05-02 16:03:49]
+  Image         : NigCar_18.png
+  Plate Number  : GGE-934-HD
+  State         : Edo
+  Confidence    : 99.3%
+  ────────────────────────────────────────
+
+[2026-05-02 16:03:50]
+  Image         : NigCar_19.png
+  Plate Number  : DEK-367-AE
+  State         : Delta
+  Confidence    : 96.15%
+  ────────────────────────────────────────
+
+[2026-05-02 16:04:00]
+  Image         : NigCar_2.jpg
+  Plate Number  : GAG-050-EN
+  State         : Ogun
+  Confidence    : 91.77%
+  ────────────────────────────────────────
+
+[2026-05-02 16:04:02]
+  Image         : NigCar_3.jpeg
+  Plate Number  : LSR-882-JF
+  State         : Lagos
+  Confidence    : 99.61%
+  ────────────────────────────────────────
+
+[2026-05-02 16:04:06]
+  Image         : NigCar_4.jpg
+  Plate Number  : GOL-768-OO
+  State         : Niger
+  Confidence    : 89.36%
+  ────────────────────────────────────────
+
+[2026-05-02 16:04:09]
+  Image         : NigCar_5.jpg
+  Plate Number  : SGB-464-AG
+  State         : Osun
+  Confidence    : 92.76%
+  ────────────────────────────────────────
+
+[2026-05-02 16:04:13]
+  Image         : NigCar_6.jpg
+  Plate Number  : LRA-113-PO
+  State         : Abuja
+  Confidence    : 94.68%
+  ────────────────────────────────────────
+
+[2026-05-02 16:04:15]
+  Image         : NigCar_7.png
+  Plate Number  : JJJ-771-JK
+  State         : Unknown
+  Confidence    : 94.13%
+  ────────────────────────────────────────
+
+[2026-05-02 16:04:16]
+  Image         : NigCar_8.png
+  Plate Number  : JTA-781-EJ
+  State         : Unknown
+  Confidence    : 90.85%
+  ────────────────────────────────────────
+
+[2026-05-02 16:04:23]
+  Image         : NigCar_9.jpg
+  Plate Number  : Not Found
+  State         : Niger
+  Confidence    : 80.47%
+  ────────────────────────────────────────
+
+[2026-05-02 16:22:16]
+  Image         : NigCar_1.jpg
+  Plate Number  : KRD-479-DR
+  State         : Unknown
+  Confidence    : 95.79%
+  ────────────────────────────────────────
+
+[2026-05-02 16:22:20]
+  Image         : NigCar_10.jpg
+  Plate Number  : APP-767-IO
+  State         : Lagos
+  Confidence    : 90.86%
+  ────────────────────────────────────────
+
+[2026-05-02 16:22:22]
+  Image         : NigCar_11.png
+  Plate Number  : Not Found
+  State         : Unknown
+  Confidence    : 0.0%
+  ────────────────────────────────────────
+
+[2026-05-02 16:22:28]
+  Image         : NigCar_12.jpg
+  Plate Number  : RSH-850-GO
+  State         : Abuja
+  Confidence    : 94.21%
+  ────────────────────────────────────────
+
+[2026-05-02 16:22:31]
+  Image         : NigCar_13.jpeg
+  Plate Number  : KTU-674-AW
+  State         : Lagos
+  Confidence    : 83.15%
+  ────────────────────────────────────────
+
+[2026-05-02 16:22:32]
+  Image         : NigCar_14.png
+  Plate Number  : AFZ-169-EA
+  State         : Unknown
+  Confidence    : 98.66%
+  ────────────────────────────────────────
+
+[2026-05-02 16:22:33]
+  Image         : NigCar_15.png
+  Plate Number  : RGB-570-MB
+  State         : Gombe
+  Confidence    : 88.63%
+  ────────────────────────────────────────
+
+[2026-05-02 16:22:35]
+  Image         : NigCar_16.jpeg
+  Plate Number  : LND-741-HE
+  State         : Unknown
+  Confidence    : 99.49%
+  ────────────────────────────────────────
+
+[2026-05-02 16:22:37]
+  Image         : NigCar_17.jpeg
+  Plate Number  : AKD-485-HV
+  State         : Lagos
+  Confidence    : 98.11%
+  ────────────────────────────────────────
+
+[2026-05-02 16:22:39]
+  Image         : NigCar_18.png
+  Plate Number  : GGE-934-HD
+  State         : Edo
+  Confidence    : 99.3%
+  ────────────────────────────────────────
+
+[2026-05-02 16:22:40]
+  Image         : NigCar_19.png
+  Plate Number  : DEK-367-AE
+  State         : Delta
+  Confidence    : 96.15%
+  ────────────────────────────────────────
+
+[2026-05-02 16:22:49]
+  Image         : NigCar_2.jpg
+  Plate Number  : GAG-050-EN
+  State         : Ogun
+  Confidence    : 91.77%
+  ────────────────────────────────────────
+
+[2026-05-02 16:22:52]
+  Image         : NigCar_3.jpeg
+  Plate Number  : LSR-882-JF
+  State         : Lagos
+  Confidence    : 99.61%
+  ────────────────────────────────────────
+
+[2026-05-02 16:22:56]
+  Image         : NigCar_4.jpg
+  Plate Number  : GOL-768-OO
+  State         : Niger
+  Confidence    : 89.36%
+  ────────────────────────────────────────
+
+[2026-05-02 16:22:58]
+  Image         : NigCar_5.jpg
+  Plate Number  : SGB-464-AG
+  State         : Osun
+  Confidence    : 92.76%
+  ────────────────────────────────────────
+
+[2026-05-02 16:23:03]
+  Image         : NigCar_6.jpg
+  Plate Number  : LRA-113-PO
+  State         : Abuja
+  Confidence    : 94.68%
+  ────────────────────────────────────────
+
+[2026-05-02 16:23:04]
+  Image         : NigCar_7.png
+  Plate Number  : JJJ-771-JK
+  State         : Unknown
+  Confidence    : 94.13%
+  ────────────────────────────────────────
+
+[2026-05-02 16:23:06]
+  Image         : NigCar_8.png
+  Plate Number  : JTA-781-EJ
+  State         : Unknown
+  Confidence    : 90.85%
+  ────────────────────────────────────────

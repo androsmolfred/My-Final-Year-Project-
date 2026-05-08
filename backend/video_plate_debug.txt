@@ -1,0 +1,229 @@
+DEBUG LOG — 2026-05-02 16:36:49.201688
+============================================================
+
+
+============================================================
+RAW PLATES FROM SERVER
+============================================================
+[RAW #0] plate='FHD-953-DB' conf=68.1% frame='Frame 10 (0.3s)' note=
+[RAW #1] plate='THD-993-DB' conf=74.4% frame='Frame 20 (0.7s)' note=
+[RAW #2] plate='CEE-333-EE' conf=78.8% frame='Frame 30 (1.0s)' note=
+[RAW #3] plate='ZDD-454-PP' conf=61.5% frame='Frame 40 (1.3s)' note=
+[RAW #4] plate='JJN-319-JA' conf=51.0% frame='Frame 50 (1.7s)' note=
+[RAW #5] plate='STG-820-DV' conf=75.3% frame='Frame 60 (2.0s)' note=
+[RAW #6] plate='STG-820-DT' conf=62.3% frame='Frame 70 (2.3s)' note=
+[RAW #7] plate='Not Found' conf=66.5% frame='Frame 80 (2.7s)' note=
+[RAW #8] plate='AHD-817-HS' conf=69.6% frame='Frame 90 (3.0s)' note=
+[RAW #9] plate='AHD-810-SI' conf=83.8% frame='Frame 100 (3.3s)' note=
+[RAW #10] plate='Not Found' conf=68.2% frame='Frame 110 (3.6s)' note=
+[RAW #11] plate='ODG-715-OO' conf=84.4% frame='Frame 120 (4.0s)' note=
+[RAW #12] plate='ODG-271-SB' conf=77.1% frame='Frame 130 (4.3s)' note=
+[RAW #13] plate='ODG-271-SB' conf=69.5% frame='Frame 140 (4.6s)' note=
+[RAW #14] plate='ODG-271-SB' conf=79.1% frame='Frame 150 (5.0s)' note=
+[RAW #15] plate='ODG-271-SB' conf=74.1% frame='Frame 160 (5.3s)' note=
+[RAW #16] plate='HBD-873-SX' conf=67.4% frame='Frame 170 (5.6s)' note=
+[RAW #17] plate='SHB-987-BS' conf=58.1% frame='Frame 180 (6.0s)' note=
+[RAW #18] plate='CEE-333-EE' conf=67.4% frame='Frame 190 (6.3s)' note=
+
+============================================================
+EXTRACTION
+============================================================
+[EXTRACT] raw='FHD-953-DB' → cleaned='FHD953DB'
+[CORRECT] 'FHD953DB' → 'FHD953DB' (start=0)
+[EXTRACT] ✅ MATCH='FHD-953-DB'
+[EXTRACT] raw='THD-993-DB' → cleaned='THD993DB'
+[CORRECT] 'THD993DB' → 'THD993DB' (start=0)
+[EXTRACT] ✅ MATCH='THD-993-DB'
+[EXTRACT] raw='CEE-333-EE' → cleaned='CEE333EE'
+[CORRECT] 'CEE333EE' → 'CEE333EE' (start=0)
+[EXTRACT] ✅ MATCH='CEE-333-EE'
+[EXTRACT] raw='ZDD-454-PP' → cleaned='ZDD454PP'
+[CORRECT] 'ZDD454PP' → 'ZDD454PP' (start=0)
+[EXTRACT] ✅ MATCH='ZDD-454-PP'
+[EXTRACT] raw='JJN-319-JA' → cleaned='JJN319JA'
+[CORRECT] 'JJN319JA' → 'JJN319JA' (start=0)
+[EXTRACT] ✅ MATCH='JJN-319-JA'
+[EXTRACT] raw='STG-820-DV' → cleaned='STG820DV'
+[CORRECT] 'STG820DV' → 'STG820DV' (start=0)
+[EXTRACT] ✅ MATCH='STG-820-DV'
+[EXTRACT] raw='STG-820-DT' → cleaned='STG820DT'
+[CORRECT] 'STG820DT' → 'STG820DT' (start=0)
+[EXTRACT] ✅ MATCH='STG-820-DT'
+[EXTRACT] raw='AHD-817-HS' → cleaned='AHD817HS'
+[CORRECT] 'AHD817HS' → 'AHD817HS' (start=0)
+[EXTRACT] ✅ MATCH='AHD-817-HS'
+[EXTRACT] raw='AHD-810-SI' → cleaned='AHD810SI'
+[CORRECT] 'AHD810SI' → 'AHD810SI' (start=0)
+[EXTRACT] ✅ MATCH='AHD-810-SI'
+[EXTRACT] raw='ODG-715-OO' → cleaned='ODG715OO'
+[CORRECT] 'ODG715OO' → 'ODG715OO' (start=0)
+[EXTRACT] ✅ MATCH='ODG-715-OO'
+[EXTRACT] raw='ODG-271-SB' → cleaned='ODG271SB'
+[CORRECT] 'ODG271SB' → 'ODG271SB' (start=0)
+[EXTRACT] ✅ MATCH='ODG-271-SB'
+[EXTRACT] raw='ODG-271-SB' → cleaned='ODG271SB'
+[CORRECT] 'ODG271SB' → 'ODG271SB' (start=0)
+[EXTRACT] ✅ MATCH='ODG-271-SB'
+[EXTRACT] raw='ODG-271-SB' → cleaned='ODG271SB'
+[CORRECT] 'ODG271SB' → 'ODG271SB' (start=0)
+[EXTRACT] ✅ MATCH='ODG-271-SB'
+[EXTRACT] raw='ODG-271-SB' → cleaned='ODG271SB'
+[CORRECT] 'ODG271SB' → 'ODG271SB' (start=0)
+[EXTRACT] ✅ MATCH='ODG-271-SB'
+[EXTRACT] raw='HBD-873-SX' → cleaned='HBD873SX'
+[CORRECT] 'HBD873SX' → 'HBD873SX' (start=0)
+[EXTRACT] ✅ MATCH='HBD-873-SX'
+[EXTRACT] raw='SHB-987-BS' → cleaned='SHB987BS'
+[CORRECT] 'SHB987BS' → 'SHB987BS' (start=0)
+[EXTRACT] ✅ MATCH='SHB-987-BS'
+[EXTRACT] raw='CEE-333-EE' → cleaned='CEE333EE'
+[CORRECT] 'CEE333EE' → 'CEE333EE' (start=0)
+[EXTRACT] ✅ MATCH='CEE-333-EE'
+
+============================================================
+17 PLATES PASSED EXTRACTION
+============================================================
+
+============================================================
+10 GROUPS AFTER SIMILARITY
+============================================================
+
+============================================================
+GROUP 0  n=2  plates=['FHD-953-DB', 'THD-993-DB']
+============================================================
+  [VOTE pos=0] votes={'F': 68.1, 'T': 74.41} winner='T' agree=52%
+  [VOTE pos=1] votes={'H': 142.51} winner='H' agree=100%
+  [VOTE pos=2] votes={'D': 142.51} winner='D' agree=100%
+  [VOTE pos=3] votes={'9': 142.51} winner='9' agree=100%
+  [VOTE pos=4] votes={'5': 68.1, '9': 74.41} winner='9' agree=52%
+  [VOTE pos=5] votes={'3': 142.51} winner='3' agree=100%
+  [VOTE pos=6] votes={'D': 142.51} winner='D' agree=100%
+  [VOTE pos=7] votes={'B': 142.51} winner='B' agree=100%
+  [VOTE result] raw='THD993DB' corrected='THD993DB'
+[VOTE] group=0 n=2 winner='THD-993-DB' conf=71.3%
+
+============================================================
+GROUP 1  n=2  plates=['CEE-333-EE', 'CEE-333-EE']
+============================================================
+  [VOTE pos=0] votes={'C': 146.17000000000002} winner='C' agree=100%
+  [VOTE pos=1] votes={'E': 146.17000000000002} winner='E' agree=100%
+  [VOTE pos=2] votes={'E': 146.17000000000002} winner='E' agree=100%
+  [VOTE pos=3] votes={'3': 146.17000000000002} winner='3' agree=100%
+  [VOTE pos=4] votes={'3': 146.17000000000002} winner='3' agree=100%
+  [VOTE pos=5] votes={'3': 146.17000000000002} winner='3' agree=100%
+  [VOTE pos=6] votes={'E': 146.17000000000002} winner='E' agree=100%
+  [VOTE pos=7] votes={'E': 146.17000000000002} winner='E' agree=100%
+  [VOTE result] raw='CEE333EE' corrected='CEE333EE'
+[VOTE] group=1 n=2 winner='CEE-333-EE' conf=73.1%
+
+============================================================
+GROUP 2  n=1  plates=['ZDD-454-PP']
+============================================================
+  [VOTE pos=0] votes={'Z': 61.46} winner='Z' agree=100%
+  [VOTE pos=1] votes={'D': 61.46} winner='D' agree=100%
+  [VOTE pos=2] votes={'D': 61.46} winner='D' agree=100%
+  [VOTE pos=3] votes={'4': 61.46} winner='4' agree=100%
+  [VOTE pos=4] votes={'5': 61.46} winner='5' agree=100%
+  [VOTE pos=5] votes={'4': 61.46} winner='4' agree=100%
+  [VOTE pos=6] votes={'P': 61.46} winner='P' agree=100%
+  [VOTE pos=7] votes={'P': 61.46} winner='P' agree=100%
+  [VOTE result] raw='ZDD454PP' corrected='ZDD454PP'
+[VOTE] group=2 n=1 winner='ZDD-454-PP' conf=61.5%
+
+============================================================
+GROUP 3  n=1  plates=['JJN-319-JA']
+============================================================
+  [VOTE pos=0] votes={'J': 50.98} winner='J' agree=100%
+  [VOTE pos=1] votes={'J': 50.98} winner='J' agree=100%
+  [VOTE pos=2] votes={'N': 50.98} winner='N' agree=100%
+  [VOTE pos=3] votes={'3': 50.98} winner='3' agree=100%
+  [VOTE pos=4] votes={'1': 50.98} winner='1' agree=100%
+  [VOTE pos=5] votes={'9': 50.98} winner='9' agree=100%
+  [VOTE pos=6] votes={'J': 50.98} winner='J' agree=100%
+  [VOTE pos=7] votes={'A': 50.98} winner='A' agree=100%
+  [VOTE result] raw='JJN319JA' corrected='JJN319JA'
+[VOTE] group=3 n=1 winner='JJN-319-JA' conf=51.0%
+
+============================================================
+GROUP 4  n=2  plates=['STG-820-DV', 'STG-820-DT']
+============================================================
+  [VOTE pos=0] votes={'S': 137.56} winner='S' agree=100%
+  [VOTE pos=1] votes={'T': 137.56} winner='T' agree=100%
+  [VOTE pos=2] votes={'G': 137.56} winner='G' agree=100%
+  [VOTE pos=3] votes={'8': 137.56} winner='8' agree=100%
+  [VOTE pos=4] votes={'2': 137.56} winner='2' agree=100%
+  [VOTE pos=5] votes={'0': 137.56} winner='0' agree=100%
+  [VOTE pos=6] votes={'D': 137.56} winner='D' agree=100%
+  [VOTE pos=7] votes={'V': 75.26, 'T': 62.3} winner='V' agree=55%
+  [VOTE result] raw='STG820DV' corrected='STG820DV'
+[VOTE] group=4 n=2 winner='STG-820-DV' conf=68.8%
+
+============================================================
+GROUP 5  n=2  plates=['AHD-817-HS', 'AHD-810-SI']
+============================================================
+  [VOTE pos=0] votes={'A': 153.42000000000002} winner='A' agree=100%
+  [VOTE pos=1] votes={'H': 153.42000000000002} winner='H' agree=100%
+  [VOTE pos=2] votes={'D': 153.42000000000002} winner='D' agree=100%
+  [VOTE pos=3] votes={'8': 153.42000000000002} winner='8' agree=100%
+  [VOTE pos=4] votes={'1': 153.42000000000002} winner='1' agree=100%
+  [VOTE pos=5] votes={'7': 69.61, '0': 83.81} winner='0' agree=55%
+  [VOTE pos=6] votes={'H': 69.61, 'S': 83.81} winner='S' agree=55%
+  [VOTE pos=7] votes={'S': 69.61, 'I': 83.81} winner='I' agree=55%
+  [VOTE result] raw='AHD810SI' corrected='AHD810SI'
+[VOTE] group=5 n=2 winner='AHD-810-SI' conf=76.7%
+
+============================================================
+GROUP 6  n=1  plates=['ODG-715-OO']
+============================================================
+  [VOTE pos=0] votes={'O': 84.38} winner='O' agree=100%
+  [VOTE pos=1] votes={'D': 84.38} winner='D' agree=100%
+  [VOTE pos=2] votes={'G': 84.38} winner='G' agree=100%
+  [VOTE pos=3] votes={'7': 84.38} winner='7' agree=100%
+  [VOTE pos=4] votes={'1': 84.38} winner='1' agree=100%
+  [VOTE pos=5] votes={'5': 84.38} winner='5' agree=100%
+  [VOTE pos=6] votes={'O': 84.38} winner='O' agree=100%
+  [VOTE pos=7] votes={'O': 84.38} winner='O' agree=100%
+  [VOTE result] raw='ODG715OO' corrected='ODG715OO'
+[VOTE] group=6 n=1 winner='ODG-715-OO' conf=84.4%
+
+============================================================
+GROUP 7  n=4  plates=['ODG-271-SB', 'ODG-271-SB', 'ODG-271-SB', 'ODG-271-SB']
+============================================================
+  [VOTE pos=0] votes={'O': 299.72} winner='O' agree=100%
+  [VOTE pos=1] votes={'D': 299.72} winner='D' agree=100%
+  [VOTE pos=2] votes={'G': 299.72} winner='G' agree=100%
+  [VOTE pos=3] votes={'2': 299.72} winner='2' agree=100%
+  [VOTE pos=4] votes={'7': 299.72} winner='7' agree=100%
+  [VOTE pos=5] votes={'1': 299.72} winner='1' agree=100%
+  [VOTE pos=6] votes={'S': 299.72} winner='S' agree=100%
+  [VOTE pos=7] votes={'B': 299.72} winner='B' agree=100%
+  [VOTE result] raw='ODG271SB' corrected='ODG271SB'
+[VOTE] group=7 n=4 winner='ODG-271-SB' conf=74.9%
+
+============================================================
+GROUP 8  n=1  plates=['HBD-873-SX']
+============================================================
+  [VOTE pos=0] votes={'H': 67.42} winner='H' agree=100%
+  [VOTE pos=1] votes={'B': 67.42} winner='B' agree=100%
+  [VOTE pos=2] votes={'D': 67.42} winner='D' agree=100%
+  [VOTE pos=3] votes={'8': 67.42} winner='8' agree=100%
+  [VOTE pos=4] votes={'7': 67.42} winner='7' agree=100%
+  [VOTE pos=5] votes={'3': 67.42} winner='3' agree=100%
+  [VOTE pos=6] votes={'S': 67.42} winner='S' agree=100%
+  [VOTE pos=7] votes={'X': 67.42} winner='X' agree=100%
+  [VOTE result] raw='HBD873SX' corrected='HBD873SX'
+[VOTE] group=8 n=1 winner='HBD-873-SX' conf=67.4%
+
+============================================================
+GROUP 9  n=1  plates=['SHB-987-BS']
+============================================================
+  [VOTE pos=0] votes={'S': 58.14} winner='S' agree=100%
+  [VOTE pos=1] votes={'H': 58.14} winner='H' agree=100%
+  [VOTE pos=2] votes={'B': 58.14} winner='B' agree=100%
+  [VOTE pos=3] votes={'9': 58.14} winner='9' agree=100%
+  [VOTE pos=4] votes={'8': 58.14} winner='8' agree=100%
+  [VOTE pos=5] votes={'7': 58.14} winner='7' agree=100%
+  [VOTE pos=6] votes={'B': 58.14} winner='B' agree=100%
+  [VOTE pos=7] votes={'S': 58.14} winner='S' agree=100%
+  [VOTE result] raw='SHB987BS' corrected='SHB987BS'
+[VOTE] group=9 n=1 winner='SHB-987-BS' conf=58.1%
