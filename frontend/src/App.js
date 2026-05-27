@@ -1,14 +1,154 @@
-  import React, { useState, useCallback, useRef } from 'react';
+import React, { useState, useCallback, useRef } from 'react';
 import './App.css';
-import { Camera, Video, Activity, FileText, Play, Upload, X, CheckCircle, AlertCircle, Info, Moon, Sun, Car, Download, RotateCcw, Menu, RefreshCw } from 'lucide-react';
+import {
+  Camera,
+  Video,
+  Activity,
+  FileText,
+  Play,
+  Upload,
+  X,
+  CheckCircle,
+  AlertCircle,
+  Info,
+  Moon,
+  Sun,
+  Download,
+  RotateCcw,
+  Menu,
+  RefreshCw
+} from 'lucide-react';
 
 // ==================== API CONFIGURATION ====================
-// Backend server URL - ensure Flask backend is running on port 5000
-// Using localhost instead of 127.0.0.1 for better browser compatibility
 const API_BASE_URL = 'http://localhost:5000';
 
 // ==================== POLLING INTERVAL FOR LIVE MONITORING ====================
-const LIVE_POLL_INTERVAL = 2000; // Poll every 2 seconds for live data updates
+const LIVE_POLL_INTERVAL = 2000;
+
+// ==================== CAMERA TIMEOUT (ms) ====================
+const CAMERA_TIMEOUT_MS = 8000;
+
+// ==================== LOCAL READ PLATE LOGGING ====================
+const READ_PLATE_LOGS_KEY = 'avlprdl_read_plate_logs';
+const MAX_LOCAL_LOGS = 500;
+
+const isReadablePlate = (result) => {
+  const plate = String(result?.plate_number || '').trim();
+  return (
+    plate &&
+    plate !== 'Not Found' &&
+    plate !== 'Error' &&
+    plate.toLowerCase() !== 'unknown'
+  );
+};
+
+const getResultState = (result) => {
+  return (
+    result?.state_of_origin ||
+    result?.detected_state ||
+    result?.state ||
+    'Unknown'
+  );
+};
+
+const parseConfidence = (value) => {
+  if (value === null || value === undefined || value === '') return null;
+  const clean = String(value).replace('%', '').trim();
+  const num = Number(clean);
+  return Number.isFinite(num) ? num : null;
+};
+
+const formatConfidence = (value) => {
+  const num = parseConfidence(value);
+  if (num === null) return '--';
+  return `${Number.isInteger(num) ? num : num.toFixed(1)}%`;
+};
+
+const loadPlateLogs = () => {
+  try {
+    const raw = localStorage.getItem(READ_PLATE_LOGS_KEY);
+    const parsed = raw ? JSON.parse(raw) : [];
+    return Array.isArray(parsed) ? parsed : [];
+  } catch {
+    return [];
+  }
+};
+
+const savePlateLogs = (logs) => {
+  try {
+    localStorage.setItem(READ_PLATE_LOGS_KEY, JSON.stringify(logs));
+  } catch {
+    // ignore localStorage errors
+  }
+};
+
+const buildDashboardFromLogs = (logs) => {
+  const states = {};
+  let confidenceSum = 0;
+  let confidenceCount = 0;
+
+  logs.forEach((item) => {
+    const state = item.state_of_origin || item.state || 'Unknown';
+    if (state && state !== 'Unknown') {
+      states[state] = (states[state] || 0) + 1;
+    }
+    const conf = parseConfidence(item.confidence);
+    if (conf !== null) {
+      confidenceSum += conf;
+      confidenceCount += 1;
+    }
+  });
+
+  const avgConfidence =
+    confidenceCount > 0
+      ? Number((confidenceSum / confidenceCount).toFixed(1))
+      : 0;
+
+  return {
+    total: logs.length,
+    states,
+    avg_confidence: avgConfidence,
+    recent: logs.slice(0, 10)
+  };
+};
+
+const createLogEntry = (result) => {
+  if (!isReadablePlate(result)) return null;
+  return {
+    id: result.id || `${Date.now()}-${Math.random()}`,
+    filename: result.filename || 'Unknown file',
+    plate_number: result.plate_number,
+    state_of_origin: getResultState(result),
+    confidence: parseConfidence(result.confidence) ?? 0,
+    status: 'processed',
+    message: result.message || 'License plate detected successfully',
+    source: result.source || 'upload',
+    timestamp: result.timestamp || new Date().toISOString()
+  };
+};
+
+// ==================== HELPER: getUserMedia with timeout ====================
+const getUserMediaWithTimeout = (constraints, timeoutMs = CAMERA_TIMEOUT_MS) => {
+  return Promise.race([
+    navigator.mediaDevices.getUserMedia(constraints),
+    new Promise((_, reject) =>
+      setTimeout(() => {
+        const err = new Error('Camera request timed out');
+        err.name = 'TimeoutError';
+        reject(err);
+      }, timeoutMs)
+    )
+  ]);
+};
+
+// ==================== HELPER: Friendly camera label ====================
+const getCameraDisplayLabel = (cam, index) => {
+  if (cam.label && cam.label.trim()) {
+    // Strip the hardware ID suffix for cleaner display
+    return cam.label.replace(/\s*\([0-9a-f]{4}:[0-9a-f]{4}\)\s*$/i, '');
+  }
+  return `Camera ${index + 1}`;
+};
 
 function App() {
   // ==================== STATE MANAGEMENT ====================
@@ -22,269 +162,411 @@ function App() {
   const [showUploadPanel, setShowUploadPanel] = useState(false);
   const [showErrorModal, setShowErrorModal] = useState(false);
   const [showAboutModal, setShowAboutModal] = useState(false);
-  const [showLiveModal, setShowLiveModal] = useState(false); // Live monitoring modal state
-  const [liveData, setLiveData] = useState({ recent: [], live_detections: [], total: 0, timestamp: null });
-  const [connectionStatus, setConnectionStatus] = useState('checking'); // checking, connected, disconnected
+  const [showLiveModal, setShowLiveModal] = useState(false);
+  const [liveData, setLiveData] = useState({
+    recent: [],
+    live_detections: [],
+    total: 0,
+    timestamp: null
+  });
+  const [connectionStatus, setConnectionStatus] = useState('checking');
   const [toast, setToast] = useState(null);
   const [darkMode, setDarkMode] = useState(true);
+
   const [sidebarOpen, setSidebarOpen] = useState(() => {
-    // Check screen size - only for large desktops (1024px+) do we always want open
     const screenWidth = window.innerWidth;
-    if (screenWidth >= 1024) return true; // Always open on desktop (1024px+)
-    
-    // For tablet/mobile (below 1024px), default to collapsed
-    return false;
+    return screenWidth >= 1024;
   });
+
   const [activeSection, setActiveSection] = useState('home');
   const [processingCount, setProcessingCount] = useState(0);
   const [processingStatus, setProcessingStatus] = useState(null);
-  
+
   // ==================== LIVE CAMERA MONITORING STATE ====================
-  const [isMonitoring, setIsMonitoring] = useState(false);         // Toggle monitoring on/off
-  const [cameraStream, setCameraStream] = useState(null);         // Camera video stream
-  const [cameraError, setCameraError] = useState('');              // Camera error message
-  const [liveDetections, setLiveDetections] = useState([]);        // Session detections from camera
-  const [isProcessingFrame, setIsProcessingFrame] = useState(false); // Processing indicator
-  const [cameraStatus, setCameraStatus] = useState('idle');       // idle, starting, active, error, stopping
-  
-  // Refs for live camera monitoring
+  const [isMonitoring, setIsMonitoring] = useState(false);
+  const [cameraStream, setCameraStream] = useState(null);
+  const [cameraError, setCameraError] = useState('');
+  const [liveDetections, setLiveDetections] = useState([]);
+  const [isProcessingFrame, setIsProcessingFrame] = useState(false);
+  const [cameraStatus, setCameraStatus] = useState('idle');
+  const [availableCameras, setAvailableCameras] = useState([]);
+  const [selectedCameraId, setSelectedCameraId] = useState('');
+  const [activeCameraLabel, setActiveCameraLabel] = useState('');
+
+  // ==================== REFS ====================
   const videoRef = useRef(null);
   const canvasRef = useRef(null);
   const captureIntervalRef = useRef(null);
-  const cameraStreamRef = useRef(null); // Track stream in ref to avoid stale closures
-  
-  // Ref for live monitoring polling interval
+  const cameraStreamRef = useRef(null);
   const livePollingRef = useRef(null);
-  
+  const processingFrameRef = useRef(false);
+  const livePlateSetRef = useRef(new Set());
+
   // ==================== TOAST NOTIFICATION ====================
   const showToast = useCallback((message, type = 'success') => {
     setToast({ message, type });
     setTimeout(() => setToast(null), 4000);
   }, []);
 
-  // ==================== LIVE CAMERA FUNCTIONS ====================
-  
-  // Start camera stream with fallback for mobile devices
-  const startCamera = async () => {
-    setCameraStatus('starting');
-    setCameraError('');
-    
+  // ==================== LOG READ PLATES ====================
+  const logReadPlates = useCallback((items) => {
+    const entries = (items || []).map(createLogEntry).filter(Boolean);
+    if (entries.length === 0) return [];
+
+    const existing = loadPlateLogs();
+    const makeKey = (item) =>
+      `${item.plate_number}|${item.filename}|${item.source || ''}`;
+    const existingKeys = new Set(existing.map(makeKey));
+
+    const freshEntries = entries.filter((entry) => {
+      const key = makeKey(entry);
+      if (existingKeys.has(key)) return false;
+      existingKeys.add(key);
+      return true;
+    });
+
+    if (freshEntries.length === 0) return [];
+
+    const merged = [...freshEntries, ...existing].slice(0, MAX_LOCAL_LOGS);
+    savePlateLogs(merged);
+    setDashboardData(buildDashboardFromLogs(merged));
+    return freshEntries;
+  }, []);
+
+  // ==================== CAMERA: ENUMERATE DEVICES ====================
+  // Pre-requests permission so real device labels become visible.
+  const enumerateCameras = async () => {
     try {
-      console.log('Requesting camera access...');
-      
-      let stream = null;
-      
-      // Try rear camera first (for mobile devices)
+      if (!navigator.mediaDevices?.enumerateDevices) return [];
+
+      // Trigger permission prompt briefly to expose device labels
       try {
-        stream = await navigator.mediaDevices.getUserMedia({
-          video: {
-            width: { ideal: 1280 },
-            height: { ideal: 720 },
-            facingMode: { ideal: 'environment' } // Prefer back/rear camera on mobile
-          },
-          audio: false
-        });
-        console.log('Camera stream obtained (rear camera):', stream);
-      } catch (rearError) {
-        console.log('Rear camera not available, trying front camera...');
-        // Fallback to front camera
-        stream = await navigator.mediaDevices.getUserMedia({
-          video: {
-            width: { ideal: 1280 },
-            height: { ideal: 720 },
-            facingMode: 'user' // Front camera fallback
-          },
-          audio: false
-        });
-        console.log('Camera stream obtained (front camera):', stream);
-      }
-      
-      // Last resort: try any camera
-      if (!stream) {
-        console.log('Trying any available camera...');
-        stream = await navigator.mediaDevices.getUserMedia({
+        const tempStream = await navigator.mediaDevices.getUserMedia({
           video: true,
           audio: false
         });
-        console.log('Camera stream obtained (any camera):', stream);
-      }
-      
-      // Store stream in ref first (to avoid stale closures)
-      cameraStreamRef.current = stream;
-      
-      // Update state
-      setCameraStream(stream);
-      setIsMonitoring(true);
-      
-      // Attach stream to video element
-      if (videoRef.current) {
-        console.log('Attaching stream to video element...');
-        videoRef.current.srcObject = stream;
-        
-        // Wait for video element to be ready and play
-        await videoRef.current.play().catch(err => {
-          console.error('Video play error:', err);
+        // Release the temporary stream immediately
+        tempStream.getTracks().forEach((t) => {
+          try { t.stop(); } catch { /* ignore */ }
         });
-        console.log('Video started playing');
-      } else {
-        console.log('Video element not ready yet, will use useEffect');
+      } catch (_) {
+        // Permission may have been denied — labels will be hidden but that's okay
       }
-      
-      // Set status to active (this triggers useEffect to ensure video is attached)
-      setCameraStatus('active');
-      
-      // Start capturing frames
-      startFrameCapture();
-      
-      showToast('Camera started successfully', 'success');
+
+      const devices = await navigator.mediaDevices.enumerateDevices();
+      const cams = devices.filter((d) => d.kind === 'videoinput');
+      console.log(
+        `[Camera] Found ${cams.length} camera(s):`,
+        cams.map((c) => c.label || 'Unlabeled')
+      );
+      setAvailableCameras(cams);
+      return cams;
     } catch (err) {
-      console.error('Camera error:', err);
-      setCameraStatus('error');
-      cameraStreamRef.current = null;
-      
-      if (err.name === 'NotAllowedError') {
-        setCameraError('Camera access denied. Please allow camera permissions.');
-        showToast('Camera access denied', 'error');
-      } else if (err.name === 'NotFoundError') {
-        setCameraError('No camera found on this device.');
-        showToast('No camera found', 'error');
-      } else {
-        setCameraError('Failed to access camera: ' + err.message);
-        showToast('Camera error', 'error');
-      }
+      console.warn('[Camera] enumerateDevices failed:', err);
+      return [];
     }
   };
-  
-  // Stop camera stream
+
+  // ==================== CAMERA: START ====================
+  const startCamera = async () => {
+    setCameraStatus('starting');
+    setCameraError('');
+
+    if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+      setCameraStatus('error');
+      setCameraError(
+        'Camera API is not available. Try a modern browser (Chrome / Edge / Firefox) over http://localhost or https.'
+      );
+      showToast('Browser not supported', 'error');
+      return;
+    }
+
+    const cams = await enumerateCameras();
+    if (cams.length === 0) {
+      setCameraStatus('error');
+      setCameraError(
+        'No camera detected on this device. Please connect a camera (USB webcam, built-in) and try again.'
+      );
+      showToast('No camera found', 'error');
+      return;
+    }
+
+    // Build base video constraints based on whether user picked a camera
+    const baseVideoConstraints = selectedCameraId
+      ? { deviceId: { exact: selectedCameraId } }
+      : { facingMode: { ideal: 'environment' } };
+
+    // Progressive fallback: try HD, then SD, then any
+    const constraintsToTry = [
+      {
+        video: {
+          ...baseVideoConstraints,
+          width:  { ideal: 1280 },
+          height: { ideal: 720 }
+        },
+        audio: false
+      },
+      {
+        video: {
+          ...baseVideoConstraints,
+          width:  { ideal: 640 },
+          height: { ideal: 480 }
+        },
+        audio: false
+      },
+      {
+        // Last resort: drop resolution constraints, but keep device choice
+        video: selectedCameraId
+          ? { deviceId: { exact: selectedCameraId } }
+          : true,
+        audio: false
+      }
+    ];
+
+    let stream = null;
+    let lastError = null;
+
+    for (let i = 0; i < constraintsToTry.length; i++) {
+      try {
+        console.log(`[Camera] Attempt ${i + 1}/${constraintsToTry.length}...`);
+        stream = await getUserMediaWithTimeout(
+          constraintsToTry[i],
+          CAMERA_TIMEOUT_MS
+        );
+        if (stream) {
+          console.log(`[Camera] Acquired on attempt ${i + 1}`);
+          break;
+        }
+      } catch (err) {
+        lastError = err;
+        console.warn(
+          `[Camera] Attempt ${i + 1} failed:`,
+          err.name,
+          err.message
+        );
+        await new Promise((r) => setTimeout(r, 400));
+      }
+    }
+
+    if (!stream) {
+      setCameraStatus('error');
+      cameraStreamRef.current = null;
+
+      let msg = 'Failed to access camera.';
+      if (lastError) {
+        const name = lastError.name;
+        const m = lastError.message || '';
+
+        if (name === 'NotAllowedError' || name === 'SecurityError') {
+          msg =
+            'Camera permission denied. Click the 🔒 icon in the address bar and allow camera access, then reload.';
+        } else if (
+          name === 'NotFoundError' ||
+          name === 'DevicesNotFoundError'
+        ) {
+          msg =
+            'No camera found. If using a USB webcam, ensure it is plugged in and try again.';
+        } else if (
+          name === 'NotReadableError' ||
+          name === 'TrackStartError' ||
+          name === 'TimeoutError' ||
+          /timeout/i.test(m)
+        ) {
+          msg =
+            'Camera is busy or unresponsive. Close other apps using the camera (Zoom, Teams, Skype, OBS, etc.), then try again.';
+        } else if (name === 'OverconstrainedError') {
+          msg =
+            'Camera does not support the requested resolution. Try selecting a different camera from the dropdown.';
+        } else if (name === 'AbortError') {
+          msg = 'Camera start was aborted. Try again.';
+        } else {
+          msg = `Camera error: ${m || name}`;
+        }
+      }
+
+      setCameraError(msg);
+      showToast(msg, 'error');
+      return;
+    }
+
+    // Identify which camera we actually connected to
+    const track = stream.getVideoTracks()[0];
+    const settings = track ? track.getSettings() : {};
+    const actualLabel = track ? track.label : '';
+    console.log('[Camera] Active device:', actualLabel, settings);
+    setActiveCameraLabel(actualLabel || 'Unknown camera');
+
+    cameraStreamRef.current = stream;
+    setCameraStream(stream);
+    setIsMonitoring(true);
+    setCameraStatus('active');
+
+    if (videoRef.current) {
+      videoRef.current.srcObject = stream;
+      try {
+        await videoRef.current.play();
+        console.log('[Camera] Video playback started');
+      } catch (playErr) {
+        console.warn('[Camera] play() error:', playErr);
+      }
+    }
+
+    startFrameCapture();
+    showToast(
+      `Camera started: ${actualLabel ? actualLabel.slice(0, 30) : 'OK'}`,
+      'success'
+    );
+  };
+
+  // ==================== CAMERA: STOP ====================
   const stopCamera = () => {
     setCameraStatus('stopping');
-    
-    // Clear capture interval
+
     if (captureIntervalRef.current) {
       clearInterval(captureIntervalRef.current);
       captureIntervalRef.current = null;
     }
-    
-    // Stop all tracks in the stream
-    if (cameraStream) {
-      cameraStream.getTracks().forEach(track => track.stop());
-      setCameraStream(null);
+
+    if (cameraStreamRef.current) {
+      cameraStreamRef.current.getTracks().forEach((track) => {
+        try { track.stop(); } catch { /* ignore */ }
+      });
+      cameraStreamRef.current = null;
     }
-    
-    // Reset video element
+
     if (videoRef.current) {
       videoRef.current.srcObject = null;
     }
-    
+
+    setCameraStream(null);
     setIsMonitoring(false);
     setCameraStatus('idle');
+    setActiveCameraLabel('');
     showToast('Camera stopped', 'info');
   };
-  
-  // Capture frame from video and send to backend using /process_frame endpoint
+
+  // ==================== CAMERA: RETRY ====================
+  const retryCamera = async () => {
+    setCameraError('');
+    setCameraStatus('idle');
+    await new Promise((r) => setTimeout(r, 300));
+    await startCamera();
+  };
+
+  // ==================== CAMERA: SWITCH ====================
+  const switchCamera = async (newDeviceId) => {
+    setSelectedCameraId(newDeviceId);
+
+    // If camera is currently running, restart it with the new device
+    if (cameraStatus === 'active') {
+      stopCamera();
+      // Wait a moment for cleanup, then start with new device
+      await new Promise((r) => setTimeout(r, 500));
+      // Note: We use a callback because state update is async
+      setTimeout(() => startCamera(), 100);
+    }
+  };
+
+  // ==================== FRAME CAPTURE & SEND ====================
   const captureAndSendFrame = async () => {
-    if (!videoRef.current || !canvasRef.current || isProcessingFrame) return;
-    
+    if (!videoRef.current || !canvasRef.current) return;
+    if (processingFrameRef.current) return;
+
     const video = videoRef.current;
     const canvas = canvasRef.current;
     const ctx = canvas.getContext('2d');
-    
-    // Ensure video is ready
+
     if (video.readyState !== 4) return;
-    
-    // Set canvas dimensions to match video
+
     canvas.width = video.videoWidth;
     canvas.height = video.videoHeight;
-    
-    // Draw current video frame to canvas
+
+    if (!canvas.width || !canvas.height) return;
+
     ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
-    
-    // Convert canvas to blob for multipart/form-data upload
-    const blob = await new Promise(resolve => canvas.toBlob(resolve, 'image/jpeg', 1.0));
-    
-    if (!blob) {
-      console.error('Failed to create blob from canvas');
-      return;
-    }
-    
-    console.log('Sending frame to backend (size:', blob.size, 'bytes)');
+
+    const blob = await new Promise((resolve) =>
+      canvas.toBlob(resolve, 'image/jpeg', 0.9)
+    );
+
+    if (!blob) return;
+
+    processingFrameRef.current = true;
     setIsProcessingFrame(true);
-    
+
     try {
-      // Create FormData with the frame as a file
       const formData = new FormData();
       formData.append('frame', blob, 'frame.jpg');
-      
+
       const response = await fetch(`${API_BASE_URL}/api/image`, {
         method: 'POST',
         body: formData
-        // Note: NOT setting Content-Type header - let browser set it with boundary for FormData
       });
-      
-      console.log('API Response status:', response.status);
-      
+
       if (response.ok) {
-        // Update connection status to connected on successful response
         setConnectionStatus('connected');
-        
         const data = await response.json();
-        console.log('API Response data:', data);
-        
-        if (data.detections && data.detections.length > 0) {
-          console.log('Detected plates:', data.plates);
-          
-          // Add new detections to the list (prevent duplicates)
-          setLiveDetections(prev => {
-            const newDetections = [...prev];
-            const existingPlates = new Set(newDetections.map(d => d.plate_number));
-            
-            data.detections.forEach(detection => {
-              if (!existingPlates.has(detection.plate_number)) {
-                newDetections.unshift({
-                  ...detection,
+        console.log('[LIVE FRAME RESPONSE]', data);
+
+        if (isReadablePlate(data)) {
+          const liveResult = {
+            filename: 'Live Camera',
+            plate_number: data.plate_number,
+            state_of_origin: getResultState(data),
+            confidence: data.confidence || 0,
+            status: 'processed',
+            message: 'License plate detected successfully',
+            source: 'live-camera',
+            timestamp: new Date().toISOString()
+          };
+
+          logReadPlates([liveResult]);
+
+          // Push to backend live store (best effort, non-blocking)
+          try {
+            await fetch(`${API_BASE_URL}/api/live-data/add`, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify(liveResult)
+            });
+          } catch { /* non-blocking */ }
+
+          if (!livePlateSetRef.current.has(data.plate_number)) {
+            livePlateSetRef.current.add(data.plate_number);
+            setLiveDetections((prev) =>
+              [
+                {
+                  plate_number: data.plate_number,
+                  state: getResultState(data),
+                  confidence: data.confidence || 0,
                   timestamp: new Date().toISOString(),
                   id: Date.now() + Math.random()
-                });
-              }
-            });
-            
-            // Keep only last 50 detections
-            return newDetections.slice(0, 50);
-          });
-          
-          showToast(`Detected: ${data.plates.join(', ')}`, 'success');
-        }
-        
-        // Also update logged plates if available
-        if (data.logged_plates && data.logged_plates.length > 0) {
-          console.log('Total logged plates:', data.logged_plates.length);
+                },
+                ...prev
+              ].slice(0, 50)
+            );
+            showToast(`Detected: ${data.plate_number}`, 'success');
+          }
         }
       } else {
-        console.error('Failed to process frame:', response.status);
-        const errorText = await response.text();
-        console.error('Error response:', errorText);
         setConnectionStatus('disconnected');
       }
     } catch (err) {
       console.error('Frame processing error:', err);
       setConnectionStatus('disconnected');
     } finally {
+      processingFrameRef.current = false;
       setIsProcessingFrame(false);
     }
   };
-  
-  // Start capturing frames at regular intervals (500ms as per requirements)
+
   const startFrameCapture = () => {
-    // Clear any existing interval
     if (captureIntervalRef.current) {
       clearInterval(captureIntervalRef.current);
     }
-    
-    // Capture frames every 500ms as per requirements
-    captureIntervalRef.current = setInterval(captureAndSendFrame, 500);
+    captureIntervalRef.current = setInterval(captureAndSendFrame, 1500);
   };
-  
-  // Handle live monitoring toggle
+
   const toggleMonitoring = () => {
     if (isMonitoring) {
       stopCamera();
@@ -292,61 +574,77 @@ function App() {
       startCamera();
     }
   };
-  
+
   // ==================== CAMERA VIDEO INITIALIZATION EFFECT ====================
-  // This effect handles video element initialization when cameraStatus changes to 'active'
-  // and ensures the stream is properly attached even if the video element wasn't ready initially
   React.useEffect(() => {
-    if (cameraStatus === 'active' && videoRef.current && cameraStreamRef.current) {
-      // If video element exists but srcObject is not set, attach it
+    if (
+      cameraStatus === 'active' &&
+      videoRef.current &&
+      cameraStreamRef.current
+    ) {
       if (!videoRef.current.srcObject) {
-        console.log('useEffect: Attaching stream to video element...');
         videoRef.current.srcObject = cameraStreamRef.current;
-        videoRef.current.play().catch(err => {
-          console.error('Video play error in useEffect:', err);
-        });
+        videoRef.current.play().catch(() => {});
       }
     }
   }, [cameraStatus]);
-  
-  // Cleanup when modal closes - use refs to avoid stale closures
+
+  // ==================== DETECT CAMERA HOT-PLUG ====================
+  // If the user plugs/unplugs a USB camera, refresh the camera list.
+  React.useEffect(() => {
+    if (!navigator.mediaDevices?.addEventListener) return;
+
+    const handleDeviceChange = () => {
+      console.log('[Camera] Devices changed — re-enumerating');
+      if (showLiveModal) {
+        enumerateCameras();
+      }
+    };
+
+    navigator.mediaDevices.addEventListener('devicechange', handleDeviceChange);
+    return () => {
+      navigator.mediaDevices.removeEventListener(
+        'devicechange',
+        handleDeviceChange
+      );
+    };
+  }, [showLiveModal]);
+
+  // ==================== CLEANUP WHEN LIVE MODAL CLOSES ====================
   React.useEffect(() => {
     if (!showLiveModal) {
-      console.log('Modal closed, cleaning up camera...');
-      
-      // Clear capture interval
       if (captureIntervalRef.current) {
         clearInterval(captureIntervalRef.current);
         captureIntervalRef.current = null;
       }
-      
-      // Stop all tracks in the stream using ref (avoids stale closure issue)
+
       if (cameraStreamRef.current) {
-        cameraStreamRef.current.getTracks().forEach(track => track.stop());
+        cameraStreamRef.current.getTracks().forEach((track) => {
+          try { track.stop(); } catch { /* ignore */ }
+        });
         cameraStreamRef.current = null;
       }
-      
-      // Reset video element
+
       if (videoRef.current) {
         videoRef.current.srcObject = null;
       }
-      
-      // Reset all state
+
+      processingFrameRef.current = false;
+      livePlateSetRef.current.clear();
+
       setCameraStream(null);
       setIsMonitoring(false);
       setCameraStatus('idle');
       setLiveDetections([]);
       setCameraError('');
+      setActiveCameraLabel('');
     }
   }, [showLiveModal]);
-  
+
   // ==================== CONNECTION TEST ====================
-  // Tests connectivity to the backend server
   const testConnection = async () => {
     try {
-      const response = await fetch(`${API_BASE_URL}/api/image`, {
-        method: 'OPTIONS'
-      });
+      const response = await fetch(`${API_BASE_URL}/api/test`);
       if (response.ok) {
         setConnectionStatus('connected');
       } else {
@@ -359,61 +657,81 @@ function App() {
   };
 
   // ==================== FETCH DASHBOARD DATA ====================
-  // Fetches dashboard statistics from the backend
   const fetchDashboardData = async () => {
+    const localLogs = loadPlateLogs();
+    const localDashboard = buildDashboardFromLogs(localLogs);
+    setDashboardData(localDashboard);
+
     try {
       const response = await fetch(`${API_BASE_URL}/api/dashboard`);
       if (response.ok) {
         const data = await response.json();
-        setDashboardData(data);
-      } else {
-        console.error('Failed to fetch dashboard data:', response.status);
+        if (data && Number(data.total || 0) > 0) {
+          setDashboardData(data);
+        } else {
+          setDashboardData(localDashboard);
+        }
       }
     } catch (err) {
       console.error('Dashboard fetch error:', err);
-      // Silently fail - use default stats when backend is unavailable
-      setDashboardData(null);
+      setDashboardData(localDashboard);
     }
   };
 
   // ==================== FETCH LIVE DATA ====================
-  // Fetches live detection data for real-time monitoring
   const fetchLiveData = async () => {
-    setLoading(true);
     try {
+      const localLogs = loadPlateLogs();
+      const localDashboard = buildDashboardFromLogs(localLogs);
+
       const response = await fetch(`${API_BASE_URL}/api/live-data`);
       if (response.ok) {
         const data = await response.json();
-        setLiveData(data);
+        if (data && Number(data.total || 0) > 0) {
+          setLiveData(data);
+        } else {
+          setLiveData({
+            recent: localDashboard.recent,
+            live_detections: localDashboard.recent,
+            total: localDashboard.total,
+            timestamp: new Date().toISOString()
+          });
+        }
         setConnectionStatus('connected');
       } else {
-        console.error('Failed to fetch live data:', response.status);
+        setLiveData({
+          recent: localDashboard.recent,
+          live_detections: localDashboard.recent,
+          total: localDashboard.total,
+          timestamp: new Date().toISOString()
+        });
         setConnectionStatus('disconnected');
       }
     } catch (err) {
       console.error('Live data fetch error:', err);
+      const localLogs = loadPlateLogs();
+      const localDashboard = buildDashboardFromLogs(localLogs);
+      setLiveData({
+        recent: localDashboard.recent,
+        live_detections: localDashboard.recent,
+        total: localDashboard.total,
+        timestamp: new Date().toISOString()
+      });
       setConnectionStatus('disconnected');
-    } finally {
-      setLoading(false);
     }
   };
 
   // ==================== LIVE MONITORING POLLING ====================
-  // Start/stop polling when live modal opens/closes
   React.useEffect(() => {
     if (showLiveModal) {
-      // Start polling when modal opens
-      fetchLiveData(); // Fetch immediately
+      fetchLiveData();
       livePollingRef.current = setInterval(fetchLiveData, LIVE_POLL_INTERVAL);
     } else {
-      // Stop polling when modal closes
       if (livePollingRef.current) {
         clearInterval(livePollingRef.current);
         livePollingRef.current = null;
       }
     }
-    
-    // Cleanup on unmount
     return () => {
       if (livePollingRef.current) {
         clearInterval(livePollingRef.current);
@@ -423,9 +741,7 @@ function App() {
 
   // ==================== INITIAL DATA FETCH ====================
   React.useEffect(() => {
-    // Fetch dashboard data on mount
     fetchDashboardData();
-    // Test connection to backend
     testConnection();
   }, []);
 
@@ -439,52 +755,63 @@ function App() {
   }, [darkMode]);
 
   // ==================== RESET HANDLER ====================
-  // Reset all state to initial values
   const handleReset = () => {
     setResults([]);
-    setDashboardData(null);
+    setDashboardData(buildDashboardFromLogs(loadPlateLogs()));
     setFiles([]);
     setUploadProgress(0);
     setError('');
     setShowUploadPanel(false);
     setShowErrorModal(false);
     setActiveSection('home');
-    fetchDashboardData();
     showToast('Dashboard reset successfully', 'success');
   };
 
   // ==================== EXPORT ANALYTICS HANDLER ====================
-  // Export analytics data with duplicate filtering
   const handleExportAnalytics = async () => {
     try {
       setLoading(true);
-      const response = await fetch(`${API_BASE_URL}/api/export-analytics`);
-      
-      if (response.ok) {
-        const data = await response.json();
-        
-        if (data.data && data.data.length > 0) {
-          // Transform and display the results
-          setResults(data.data.map((item, idx) => ({
-            filename: item.Image_Name || item.image_name || `Record ${idx + 1}`,
-            status: 'processed',
-            plate_number: item.Plate_Number || item.plate_number,
-            state_of_origin: item.State_of_Origin || item.state_of_origin,
-            confidence: item.Confidence || item.confidence,
-            message: 'Exported from analytics'
-          })));
-          
-          // Show summary message including duplicate filtering info
-          const duplicatesMsg = data.summary?.duplicates_filtered > 0 
-            ? ` (${data.summary.duplicates_filtered} duplicates filtered)` 
-            : '';
-          showToast(`Exported ${data.data.length} unique records${duplicatesMsg}`, 'success');
-        } else {
-          showToast('No analytics data available to export', 'info');
+      let exportedResults = [];
+
+      try {
+        const response = await fetch(`${API_BASE_URL}/api/export-analytics`);
+        if (response.ok) {
+          const data = await response.json();
+          if (data.data && data.data.length > 0) {
+            exportedResults = data.data.map((item, idx) => ({
+              filename: item.Image_Name || item.image_name || `Record ${idx + 1}`,
+              status: 'processed',
+              plate_number: item.Plate_Number || item.plate_number,
+              state_of_origin:
+                item.State_of_Origin || item.state_of_origin || 'Unknown',
+              confidence: item.Confidence || item.confidence || 0,
+              message: 'License plate detected successfully',
+              source: 'backend-export'
+            }));
+          }
         }
+      } catch {
+        // fallback to local logs below
+      }
+
+      if (exportedResults.length === 0) {
+        const localLogs = loadPlateLogs();
+        exportedResults = localLogs.map((item) => ({
+          filename: item.filename,
+          status: 'processed',
+          plate_number: item.plate_number,
+          state_of_origin: item.state_of_origin || 'Unknown',
+          confidence: item.confidence || 0,
+          message: 'License plate detected successfully',
+          source: 'local-log'
+        }));
+      }
+
+      if (exportedResults.length > 0) {
+        setResults(exportedResults);
+        showToast(`Loaded ${exportedResults.length} logged plate(s)`, 'success');
       } else {
-        const errorData = await response.json();
-        showToast(errorData.error || 'Failed to export analytics', 'error');
+        showToast('No logged plates available', 'info');
       }
     } catch (err) {
       console.error('Export analytics error:', err);
@@ -495,40 +822,38 @@ function App() {
   };
 
   // ==================== CLEAR LOGS HANDLER ====================
-  // Clear all logged plate data by calling backend endpoint
   const handleClearLogs = async () => {
     try {
       setLoading(true);
-      const response = await fetch(`${API_BASE_URL}/api/clear-logs`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json'
-        }
+      savePlateLogs([]);
+
+      setResults([]);
+      setDashboardData({
+        total: 0,
+        states: {},
+        avg_confidence: 0,
+        recent: []
+      });
+      setFiles([]);
+      setUploadProgress(0);
+      setLiveDetections([]);
+      setLiveData({
+        recent: [],
+        live_detections: [],
+        total: 0,
+        timestamp: null
       });
 
-      if (response.ok) {
-        const data = await response.json();
-        
-        // Clear frontend state
-        setResults([]);
-        setDashboardData({
-          total: 0,
-          states: {},
-          avg_confidence: 0,
-          recent: []
+      try {
+        await fetch(`${API_BASE_URL}/api/clear-logs`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' }
         });
-        setFiles([]);
-        setUploadProgress(0);
-        setLiveDetections([]);
-        
-        // Refresh dashboard to show cleared stats
-        fetchDashboardData();
-        
-        showToast(data.message || 'All logs cleared successfully', 'success');
-      } else {
-        const errorData = await response.json();
-        showToast(errorData.message || 'Failed to clear logs', 'error');
+      } catch {
+        // backend clear failed, but local logs are cleared
       }
+
+      showToast('All logs cleared successfully', 'success');
     } catch (err) {
       console.error('Clear logs error:', err);
       showToast('Network error occurred while clearing logs', 'error');
@@ -540,6 +865,7 @@ function App() {
   // ==================== FILE UPLOAD HANDLER ====================
   const handleFileUpload = async (e) => {
     e.preventDefault();
+
     if (files.length === 0) {
       setError('Please select file(s) to upload');
       setShowErrorModal(true);
@@ -553,120 +879,179 @@ function App() {
     setProcessingCount(files.length);
 
     try {
-      const formData = new FormData();
-      
-      // Append all files with the key 'file' (required by backend)
-      // This allows multiple files to be sent in a single request
-      files.forEach((file) => {
-        formData.append('file', file);
-      });
-
-      setUploadProgress(5); // Preparing upload
+      setUploadProgress(5);
       setProcessingStatus('Preparing upload...');
 
-      // Determine endpoint based on upload type (image or video)
-      const endpoint = uploadType === 'image' ? '/api/image' : '/api/video';
-      
-      // Simulate progress for upload phase
-      const uploadProgressInterval = setInterval(() => {
-        setUploadProgress(prev => {
-          if (prev < 25) return prev + 5;
-          return prev;
-        });
-      }, 200);
-      
-      setProcessingStatus('Uploading file(s)...');
+      if (uploadType === 'image') {
+        const allResults = [];
+        let successCount = 0;
 
-      const response = await fetch(`${API_BASE_URL}${endpoint}`, {
-        method: 'POST',
-        body: formData,
-        // Note: NOT setting Content-Type header manually - let browser set it with boundary for FormData
-      });
+        for (let i = 0; i < files.length; i++) {
+          const file = files[i];
+          setProcessingStatus(`Processing ${file.name} (${i + 1}/${files.length})...`);
+          setUploadProgress(Math.round(((i + 1) / files.length) * 90));
 
-      clearInterval(uploadProgressInterval);
-      setUploadProgress(30);
-      setProcessingStatus(uploadType === 'image' ? 'Detecting license plates...' : 'Processing video frames...');
+          const formData = new FormData();
+          formData.append('file', file);
 
-      if (response.ok) {
-        const data = await response.json();
-        
-        setUploadProgress(80);
-        setProcessingStatus('OCR processing...');
-        
-        // Simulate OCR progress
-        const ocrProgressInterval = setInterval(() => {
-          setUploadProgress(prev => {
-            if (prev < 95) return prev + 3;
-            return prev;
-          });
-        }, 100);
-        
-        // Small delay to show OCR processing
-        await new Promise(resolve => setTimeout(resolve, 300));
-        clearInterval(ocrProgressInterval);
-        
-        setUploadProgress(100);
-        setProcessingStatus('Complete!');
-        
-        if (uploadType === 'image') {
-          // For image uploads, response contains { status, total_files, processed_count, not_found_count, results: [...] }
-          const allResults = data.results || [];
-          setResults(allResults);
-          
-          const successCount = data.processed_count || 0;
-          const notFoundCount = data.not_found_count || 0;
-          
-          if (successCount > 0) {
-            showToast(`Successfully processed ${successCount} of ${data.total_files} images!`, 'success');
-          } else if (notFoundCount > 0) {
-            showToast(`No license plates found in ${notFoundCount} images`, 'info');
-          } else {
-            showToast('Processing complete, but no plates detected', 'info');
-          }
-        } else {
-          // For video uploads, extract individual plate detections from data.results
-          const videoResults = data.results || [];
-          
-          // Add frame info to each result for display
-          const enhancedResults = videoResults.map(result => ({
-            ...result,
-            filename: result.filename || data.filename,
-            frame_info: result.filename ? `Frame: ${result.filename.split('_frame_')[1] || 'N/A'}` : undefined
-          }));
-          
-          setResults(enhancedResults);
-          
-          if (data.status === 'processed') {
-            showToast(`Video processed! Found ${data.plates_found || 0} plate(s)`, 'success');
-          } else if (videoResults.length === 0) {
-            showToast('Video processed, but no plates found', 'info');
+          try {
+            const response = await fetch(`${API_BASE_URL}/api/process-image`, {
+              method: 'POST',
+              body: formData
+            });
+
+            if (response.ok) {
+              const data = await response.json();
+              console.log('[IMAGE RESPONSE]', data);
+
+              const plateFound = isReadablePlate(data);
+              const normalizedResult = {
+                filename: file.name,
+                status: plateFound ? 'processed' : 'not_found',
+                plate_number: plateFound ? data.plate_number : 'Not Found',
+                state_of_origin: getResultState(data),
+                confidence: data.confidence || 0,
+                message: plateFound
+                  ? 'License plate detected successfully'
+                  : 'No license plate detected',
+                source: 'image-upload',
+                timestamp: new Date().toISOString()
+              };
+
+              allResults.push(normalizedResult);
+              if (plateFound) successCount += 1;
+            } else {
+              allResults.push({
+                filename: file.name,
+                status: 'error',
+                plate_number: 'Error',
+                state_of_origin: 'Unknown',
+                confidence: 0,
+                message: `Server error ${response.status}`,
+                source: 'image-upload'
+              });
+            }
+          } catch (err) {
+            console.error('Image upload error:', err);
+            allResults.push({
+              filename: file.name,
+              status: 'error',
+              plate_number: 'Error',
+              state_of_origin: 'Unknown',
+              confidence: 0,
+              message: 'Network error',
+              source: 'image-upload'
+            });
           }
         }
-        
-        // Refresh dashboard after successful upload
-        fetchDashboardData();
+
+        setUploadProgress(100);
+        setProcessingStatus('Complete!');
+        setResults(allResults);
+
+        const logged = logReadPlates(allResults);
+
+        if (successCount > 0) {
+          showToast(
+            `Successfully read ${successCount} plate(s). Logged ${logged.length} new plate(s).`,
+            'success'
+          );
+        } else {
+          showToast('Processing complete, but no plates detected', 'info');
+        }
       } else {
-        const errorData = await response.json();
-        setError(errorData.error || 'Upload failed');
-        setShowErrorModal(true);
-        showToast('Failed to process files', 'error');
+        setProcessingStatus('Uploading video...');
+        setUploadProgress(15);
+
+        const formData = new FormData();
+        formData.append('file', files[0]);
+
+        const response = await fetch(`${API_BASE_URL}/api/process-video`, {
+          method: 'POST',
+          body: formData
+        });
+
+        setUploadProgress(80);
+        setProcessingStatus('Processing video frames...');
+
+        if (response.ok) {
+          const data = await response.json();
+          console.log('[VIDEO RESPONSE]', data);
+
+          let videoRawResults = data.results || [];
+          if (data.best_result && isReadablePlate(data.best_result)) {
+            videoRawResults = [data.best_result, ...videoRawResults];
+          }
+
+          const normalizedFrames = videoRawResults.map((result) => {
+            const plateFound = isReadablePlate(result);
+            return {
+              filename: result.filename || files[0].name,
+              status: plateFound ? 'processed' : 'not_found',
+              plate_number: plateFound ? result.plate_number : 'Not Found',
+              state_of_origin: getResultState(result),
+              confidence: result.confidence || 0,
+              message: plateFound
+                ? 'License plate detected successfully'
+                : 'No license plate detected',
+              source: 'video-upload',
+              timestamp: new Date().toISOString()
+            };
+          });
+
+          const uniqueFound = [];
+          const seenPlates = new Set();
+
+          normalizedFrames.forEach((item) => {
+            if (!isReadablePlate(item)) return;
+            if (!seenPlates.has(item.plate_number)) {
+              seenPlates.add(item.plate_number);
+              uniqueFound.push(item);
+            }
+          });
+
+          const finalVideoResults =
+            uniqueFound.length > 0 ? uniqueFound : normalizedFrames;
+
+          setUploadProgress(100);
+          setProcessingStatus('Complete!');
+          setResults(finalVideoResults);
+
+          const logged = logReadPlates(uniqueFound);
+
+          if (uniqueFound.length > 0) {
+            showToast(
+              `Video processed! Read ${uniqueFound.length} plate(s). Logged ${logged.length} new plate(s).`,
+              'success'
+            );
+          } else {
+            showToast('Video processed, but no plates found', 'info');
+          }
+        } else {
+          const errorData = await response.json().catch(() => ({}));
+          setError(errorData.error || 'Upload failed');
+          setShowErrorModal(true);
+          showToast('Failed to process video', 'error');
+        }
       }
+
+      fetchDashboardData();
     } catch (err) {
       console.error('Upload error:', err);
-      setError('Network error occurred. Please check if the backend server is running at http://localhost:5000');
+      setError(
+        'Network error occurred. Please check if the backend server is running at http://localhost:5000'
+      );
       setShowErrorModal(true);
       showToast('Network error occurred', 'error');
     } finally {
       setLoading(false);
-      // Reset processing status after a short delay
       setTimeout(() => {
-        if (!loading) setProcessingStatus(null);
+        setProcessingStatus(null);
       }, 1000);
     }
   };
 
   // ==================== ACTION HANDLER ====================
-  // Handles various action buttons (image, video, live, etc.)
   const handleAction = async (action) => {
     switch (action) {
       case 'image':
@@ -675,24 +1060,30 @@ function App() {
         setFiles([]);
         setError('');
         break;
+
       case 'video':
         setUploadType('video');
         setShowUploadPanel(true);
         setFiles([]);
         setError('');
         break;
+
       case 'live':
-        // Open live monitoring modal
         setShowLiveModal(true);
+        // Pre-enumerate so dropdown is populated when modal opens
+        enumerateCameras();
         break;
+
       case 'analysis':
         await fetchDashboardData();
         setActiveSection('analysis');
         break;
+
       case 'report':
         await fetchDashboardData();
         showToast('Report generated!', 'success');
         break;
+
       default:
         break;
     }
@@ -708,21 +1099,21 @@ function App() {
   };
 
   // ==================== DASHBOARD DATA MAPPING ====================
-  // Map backend response to frontend expected format
-  // Backend returns: { total, states, avg_confidence, recent }
-  // Frontend expects: { total_detections, today_detections, accuracy_rate, states_covered }
   const stats = React.useMemo(() => {
     if (dashboardData && dashboardData.total > 0) {
-      const stateCount = dashboardData.states ? Object.keys(dashboardData.states).length : 0;
+      const stateCount = dashboardData.states
+        ? Object.keys(dashboardData.states).length
+        : 0;
       return {
         total_detections: dashboardData.total || 0,
-        today_detections: dashboardData.recent ? dashboardData.recent.length : 0,
+        today_detections: dashboardData.recent
+          ? dashboardData.recent.length
+          : 0,
         accuracy_rate: dashboardData.avg_confidence || 0,
         states_covered: stateCount || 0,
         hasData: true
       };
     }
-    // No data yet - show placeholder values
     return {
       total_detections: 0,
       today_detections: 0,
@@ -733,6 +1124,10 @@ function App() {
   }, [dashboardData]);
 
   // ==================== RENDER ====================
+  const readableResults = results.filter(isReadablePlate);
+  const cameraBusyError =
+    cameraError && /busy|unresponsive|NotReadable/i.test(cameraError);
+
   return (
     <div className={`App ${darkMode ? 'dark-mode' : ''}`}>
       {/* Toast Notification */}
@@ -749,7 +1144,7 @@ function App() {
       )}
 
       {/* Mobile Menu Button */}
-      <button 
+      <button
         className={`mobile-menu-btn ${sidebarOpen ? 'hidden' : ''}`}
         onClick={() => setSidebarOpen(true)}
         aria-label="Open menu"
@@ -758,7 +1153,7 @@ function App() {
       </button>
 
       {/* Sidebar Overlay */}
-      <div 
+      <div
         className={`sidebar-overlay ${sidebarOpen ? 'visible' : ''}`}
         onClick={() => setSidebarOpen(false)}
       />
@@ -767,15 +1162,23 @@ function App() {
       <aside className={`sidebar ${sidebarOpen ? 'open' : 'collapsed'}`}>
         <div className="sidebar-header">
           <div className="logo">
-            <img src={require('./imageCapture.jpeg')} alt="AVLPRDL" style={{ width: 32, height: 32, borderRadius: 8 }} />
+            <img
+              src={require('./imageCapture.jpeg')}
+              alt="AVLPRDL"
+              style={{ width: 32, height: 32, borderRadius: 8 }}
+            />
             <span>AVLPRDL System</span>
           </div>
         </div>
-        
+
         <button className="sidebar-expand" onClick={() => setSidebarOpen(true)}>
-          <img src={require('./imageCapture.jpeg')} alt="AVLPRDL" style={{ width: 32, height: 32,}} />
+          <img
+            src={require('./imageCapture.jpeg')}
+            alt="AVLPRDL"
+            style={{ width: 32, height: 32 }}
+          />
         </button>
-        
+
         <nav className="sidebar-nav">
           <button
             className={`nav-item ${activeSection === 'home' ? 'active' : ''}`}
@@ -784,24 +1187,26 @@ function App() {
             <Activity size={20} />
             <span>Dashboard</span>
           </button>
+
           <button className="nav-item" onClick={handleExportAnalytics}>
             <Download size={20} />
             <span>Export Analytics Result</span>
           </button>
+
           <button className="nav-item" onClick={handleClearLogs}>
             <RotateCcw size={20} />
             <span>Clear Logs</span>
           </button>
+
           <button className="nav-item" onClick={() => setShowAboutModal(true)}>
             <Info size={20} />
             <span>About</span>
           </button>
         </nav>
-        
+
         <div className="sidebar-footer">
           <button className="theme-toggle" onClick={() => setDarkMode(!darkMode)}>
             {darkMode ? <Sun size={20} /> : <Moon size={20} />}
-            <span>{darkMode ? '' : ''}</span>
           </button>
         </div>
       </aside>
@@ -810,10 +1215,13 @@ function App() {
       <main className={`main-content ${sidebarOpen ? '' : 'full-width'}`}>
         <header className="top-header">
           <div className="header-left">
-            <h1>Automated Vehicle License Plate Recognition (AVLPR)<br />& Data Logging</h1>
+            <h1>
+              Automated Vehicle License Plate Recognition (AVLPR)
+              <br />
+              & Data Logging
+            </h1>
             <p>Real-Time Detection & Intelligent Data Archiving</p>
           </div>
-          
         </header>
 
         {/* Stats Cards */}
@@ -828,6 +1236,7 @@ function App() {
                 <span className="stat-label">Recent Detections</span>
               </div>
             </div>
+
             <div className="stat-card">
               <div className="stat-icon stat-icon-2">
                 <Activity size={24} />
@@ -837,15 +1246,19 @@ function App() {
                 <span className="stat-label">Total Plates</span>
               </div>
             </div>
+
             <div className="stat-card">
               <div className="stat-icon stat-icon-3">
                 <CheckCircle size={24} />
               </div>
               <div className="stat-content">
-                <span className="stat-value">{stats.hasData ? `${stats.accuracy_rate}%` : '--'}</span>
+                <span className="stat-value">
+                  {stats.hasData ? `${stats.accuracy_rate}%` : '--'}
+                </span>
                 <span className="stat-label">Accuracy Rate</span>
               </div>
             </div>
+
             <div className="stat-card">
               <div className="stat-icon stat-icon-4">
                 <FileText size={24} />
@@ -862,7 +1275,10 @@ function App() {
         <section className="actions-section">
           <h2>Quick Actions</h2>
           <div className="actions-grid">
-            <button className="action-card action-image" onClick={() => handleAction('image')}>
+            <button
+              className="action-card action-image"
+              onClick={() => handleAction('image')}
+            >
               <div className="action-icon">
                 <Camera size={32} />
               </div>
@@ -875,7 +1291,10 @@ function App() {
               </div>
             </button>
 
-            <button className="action-card action-video" onClick={() => handleAction('video')}>
+            <button
+              className="action-card action-video"
+              onClick={() => handleAction('video')}
+            >
               <div className="action-icon">
                 <Video size={32} />
               </div>
@@ -888,7 +1307,10 @@ function App() {
               </div>
             </button>
 
-            <button className="action-card action-live" onClick={() => handleAction('live')}>
+            <button
+              className="action-card action-live"
+              onClick={() => handleAction('live')}
+            >
               <div className="action-icon">
                 <Play size={32} />
               </div>
@@ -903,72 +1325,59 @@ function App() {
           </div>
         </section>
 
-        {/* Results Section - Only show successfully processed plates */}
-        {(() => {
-          // Filter results into readable and unread
-          const readableResults = results.filter(r => r.status === 'processed');
-          const unreadResults = results.filter(r => r.status !== 'processed');
-          
-          return (
-            <>
-              {readableResults.length > 0 && (
-                <section className="results-section">
-                  <h2>Detection Results</h2>
-                  <div className="results-grid">
-                    {readableResults.map((result, index) => (
-                      <div key={index} className="result-card">
-                        <div className="result-header">
-                          <span className="result-filename">{result.filename}</span>
-                          <span className={`result-status ${result.status}`}>{result.status}</span>
-                        </div>
-                        <div className="result-body">
-                          <p className="result-message">{result.message}</p>
-                          {result.plate_number && (
-                            <div className="plate-details">
-                              <div className="plate-number">
-                                <span className="label">Plate Number</span>
-                                <span className="value">{result.plate_number}</span>
-                              </div>
-                              <div className="plate-state">
-                                <span className="label">State</span>
-                                <span className="value badge">{result.state_of_origin}</span>
-                              </div>
-                              <div className="plate-confidence">
-                                <span className="label">Confidence</span>
-                                <span className="value">{result.confidence}%</span>
-                              </div>
-                            </div>
-                          )}
-                        </div>
+        {/* Detection Results */}
+        {readableResults.length > 0 && (
+          <section className="results-section">
+            <h2>Detection Results</h2>
+            <div className="results-grid">
+              {readableResults.map((result, index) => (
+                <div key={index} className="result-card">
+                  <div className="result-header">
+                    <span className="result-filename">{result.filename}</span>
+                    <span className="result-status processed">PROCESSED</span>
+                  </div>
+                  <div className="result-body">
+                    <p className="result-message">
+                      {result.message || 'License plate detected successfully'}
+                    </p>
+                    <div className="plate-details">
+                      <div className="plate-number">
+                        <span className="label">Plate Number</span>
+                        <span className="value">{result.plate_number}</span>
                       </div>
-                    ))}
+                      <div className="plate-state">
+                        <span className="label">State</span>
+                        <span className="value badge">
+                          {getResultState(result)}
+                        </span>
+                      </div>
+                      <div className="plate-confidence">
+                        <span className="label">Confidence</span>
+                        <span className="value">
+                          {formatConfidence(result.confidence)}
+                        </span>
+                      </div>
+                    </div>
                   </div>
-                </section>
-              )}
-              
-              {/* Unread Plates Summary - Shown at bottom when plates couldn't be read */}
-              {unreadResults.length > 0 && (
-                <section className="unread-plates-section">
-                  <h3>
-                    <AlertCircle size={20} />
-                    Unread Plates ({unreadResults.length})
-                  </h3>
-                  <div className="unread-plates-list">
-                    {unreadResults.map((result, index) => (
-                      <span key={index} className="unread-plate-tag">
-                        {result.filename || `File ${index + 1}`}
-                      </span>
-                    ))}
-                  </div>
-                </section>
-              )}
-            </>
-          );
-        })()}
+                </div>
+              ))}
+            </div>
+          </section>
+        )}
+
+        {results.length > 0 && readableResults.length === 0 && (
+          <section className="unread-plates-section">
+            <h3>
+              <AlertCircle size={20} />
+              No Plate Detected
+            </h3>
+            <p>No readable license plate was found in the selected file(s).</p>
+          </section>
+        )}
 
         <footer className="app-footer">
           <div className="footer-left">
-            <img src="/MYLogo.png" alt="wurdboss" width={25}/>
+            <img src="/MYLogo.png" alt="wurdboss" width={25} />
             <span>Uwagboi Andrew Chukwuyem </span>
           </div>
           <div className="footer-right">
@@ -979,36 +1388,66 @@ function App() {
 
       {/* Upload Modal */}
       {showUploadPanel && (
-        <div className="modal-overlay" onClick={() => setShowUploadPanel(false)}>
-          <div className="modal upload-modal" onClick={(e) => e.stopPropagation()}>
+        <div
+          className="modal-overlay"
+          onClick={() => setShowUploadPanel(false)}
+        >
+          <div
+            className="modal upload-modal"
+            onClick={(e) => e.stopPropagation()}
+          >
             <div className="modal-header">
               <h2>
-                {uploadType === 'image' ? <><Camera size={24} /> Upload Images</> : <><Video size={24} /> Upload Video</>}
+                {uploadType === 'image' ? (
+                  <>
+                    <Camera size={24} /> Upload Images
+                  </>
+                ) : (
+                  <>
+                    <Video size={24} /> Upload Video
+                  </>
+                )}
               </h2>
-              <button className="modal-close" onClick={() => setShowUploadPanel(false)}>
+              <button
+                className="modal-close"
+                onClick={() => setShowUploadPanel(false)}
+              >
                 <X size={20} />
               </button>
             </div>
+
             <form onSubmit={handleFileUpload} className="upload-form">
               <div className="file-drop-zone">
                 <Upload size={48} />
-                <p>Drag and drop or click to select {uploadType === 'image' ? 'multiple images' : 'a video'}</p>
+                <p>
+                  Drag and drop or click to select{' '}
+                  {uploadType === 'image' ? 'multiple images' : 'a video'}
+                </p>
                 <input
                   type="file"
                   multiple={uploadType === 'image'}
-                  accept={uploadType === 'image' ? '.png,.jpg,.jpeg,.gif,.bmp' : '.mp4,.avi,.mov,.mkv'}
+                  accept={
+                    uploadType === 'image'
+                      ? '.png,.jpg,.jpeg,.gif,.bmp,.webp'
+                      : '.mp4,.avi,.mov,.mkv,.webm'
+                  }
                   onChange={(e) => {
                     const newFiles = Array.from(e.target.files);
-                    setFiles(prev => [...prev, ...newFiles]);
+                    setFiles((prev) =>
+                      uploadType === 'image'
+                        ? [...prev, ...newFiles]
+                        : newFiles.slice(0, 1)
+                    );
                   }}
                 />
               </div>
+
               {files.length > 0 && (
                 <div className="selected-files">
                   <div className="selected-files-header">
                     <span>Selected Files ({files.length})</span>
-                    <button 
-                      type="button" 
+                    <button
+                      type="button"
                       className="clear-all-btn"
                       onClick={() => setFiles([])}
                     >
@@ -1019,11 +1458,17 @@ function App() {
                     {files.map((file, index) => (
                       <div key={index} className="file-info">
                         <span className="file-name">{file.name}</span>
-                        <span className="file-size">{formatFileSize(file.size)}</span>
-                        <button 
-                          type="button" 
+                        <span className="file-size">
+                          {formatFileSize(file.size)}
+                        </span>
+                        <button
+                          type="button"
                           className="remove-file-btn"
-                          onClick={() => setFiles(prev => prev.filter((_, i) => i !== index))}
+                          onClick={() =>
+                            setFiles((prev) =>
+                              prev.filter((_, i) => i !== index)
+                            )
+                          }
                         >
                           <X size={16} />
                         </button>
@@ -1032,25 +1477,43 @@ function App() {
                   </div>
                 </div>
               )}
+
               {loading && (
                 <div className="progress-info">
                   <div className="progress-bar">
-                    <div className="progress-fill" style={{ width: `${uploadProgress}%` }}></div>
+                    <div
+                      className="progress-fill"
+                      style={{ width: `${uploadProgress}%` }}
+                    />
                   </div>
                   <span className="progress-text">
-                    {processingStatus || `Processing ${processingCount} of ${files.length} files...`}
+                    {processingStatus ||
+                      `Processing ${processingCount} of ${files.length} files...`}
                   </span>
                 </div>
               )}
+
               <div className="modal-actions">
-                <button type="button" className="btn btn-secondary" onClick={() => {
-                  setShowUploadPanel(false);
-                  setFiles([]);
-                }}>
+                <button
+                  type="button"
+                  className="btn btn-secondary"
+                  onClick={() => {
+                    setShowUploadPanel(false);
+                    setFiles([]);
+                  }}
+                >
                   Cancel
                 </button>
-                <button type="submit" className="btn btn-primary" disabled={loading || files.length === 0}>
-                  {loading ? 'Processing...' : `Upload ${files.length > 0 ? `${files.length} ` : ''}${uploadType === 'image' ? 'Image(s)' : 'Video'}`}
+                <button
+                  type="submit"
+                  className="btn btn-primary"
+                  disabled={loading || files.length === 0}
+                >
+                  {loading
+                    ? 'Processing...'
+                    : `Upload ${
+                        files.length > 0 ? `${files.length} ` : ''
+                      }${uploadType === 'image' ? 'Image(s)' : 'Video'}`}
                 </button>
               </div>
             </form>
@@ -1060,17 +1523,34 @@ function App() {
 
       {/* Error Modal */}
       {showErrorModal && error && (
-        <div className="modal-overlay" onClick={() => setShowErrorModal(false)}>
-          <div className="modal error-modal" onClick={(e) => e.stopPropagation()}>
+        <div
+          className="modal-overlay"
+          onClick={() => setShowErrorModal(false)}
+        >
+          <div
+            className="modal error-modal"
+            onClick={(e) => e.stopPropagation()}
+          >
             <div className="modal-header">
-              <h2><AlertCircle size={24} /> Error</h2>
-              <button className="modal-close" onClick={() => setShowErrorModal(false)}>
+              <h2>
+                <AlertCircle size={24} /> Error
+              </h2>
+              <button
+                className="modal-close"
+                onClick={() => setShowErrorModal(false)}
+              >
                 <X size={20} />
               </button>
             </div>
             <p className="error-message">{error}</p>
             <div className="modal-actions">
-              <button className="btn btn-secondary" onClick={() => { setShowErrorModal(false); setError(''); }}>
+              <button
+                className="btn btn-secondary"
+                onClick={() => {
+                  setShowErrorModal(false);
+                  setError('');
+                }}
+              >
                 Close
               </button>
             </div>
@@ -1080,27 +1560,44 @@ function App() {
 
       {/* About Modal */}
       {showAboutModal && (
-        <div className="modal-overlay" onClick={() => setShowAboutModal(false)}>
-          <div className="modal about-modal" onClick={(e) => e.stopPropagation()}>
+        <div
+          className="modal-overlay"
+          onClick={() => setShowAboutModal(false)}
+        >
+          <div
+            className="modal about-modal"
+            onClick={(e) => e.stopPropagation()}
+          >
             <div className="modal-header">
-              <h2><Info size={24} /> Student's Details</h2>
-              <button className="modal-close" onClick={() => setShowAboutModal(false)}>
+              <h2>
+                <Info size={24} /> Student's Details
+              </h2>
+              <button
+                className="modal-close"
+                onClick={() => setShowAboutModal(false)}
+              >
                 <X size={20} />
               </button>
             </div>
+
             <div className="about-content">
               <div className="about-hero">
                 <h3>AVLPRDL System</h3>
               </div>
-              
+
               <div className="about-details">
                 <div className="about-item">
                   <span className="about-label">Project Topic</span>
-                  <span className="about-value">Developing a Solution for Automated Vehicle License Plate Recognition (AVLPR) & Data Logging</span>
+                  <span className="about-value">
+                    Developing a Solution for Automated Vehicle License Plate
+                    Recognition (AVLPR) & Data Logging
+                  </span>
                 </div>
                 <div className="about-item">
                   <span className="about-label">Supervisor</span>
-                  <span className="about-value">Dr. Oluwafemi Samuel O. Abe</span>
+                  <span className="about-value">
+                    Dr. Oluwafemi Samuel O. Abe
+                  </span>
                 </div>
                 <div className="about-item">
                   <span className="about-label">Developer</span>
@@ -1131,8 +1628,12 @@ function App() {
                 </div>
               </div>
             </div>
+
             <div className="modal-actions">
-              <button className="btn btn-primary" onClick={() => setShowAboutModal(false)}>
+              <button
+                className="btn btn-primary"
+                onClick={() => setShowAboutModal(false)}
+              >
                 Close
               </button>
             </div>
@@ -1140,42 +1641,137 @@ function App() {
         </div>
       )}
 
-      {/* ==================== LIVE MONITORING MODAL ==================== */}
-      {/* Enhanced Live Monitoring with camera and real-time detection */}
+      {/* Live Monitoring Modal */}
       {showLiveModal && (
-        <div className="modal-overlay" onClick={() => setShowLiveModal(false)}>
-          <div className="modal live-modal live-modal-extra-large" onClick={(e) => e.stopPropagation()}>
+        <div
+          className="modal-overlay"
+          onClick={() => setShowLiveModal(false)}
+        >
+          <div
+            className="modal live-modal live-modal-extra-large"
+            onClick={(e) => e.stopPropagation()}
+          >
             <div className="modal-header">
-              <h2><Activity size={24} /> Live Monitoring</h2>
+              <h2>
+                <Activity size={24} /> Live Monitoring
+              </h2>
               <div className="live-status-indicator">
-                <span className={`live-dot ${connectionStatus === 'connected' ? 'active' : ''}`}></span>
-                <span className={`live-status-text ${connectionStatus === 'connected' ? 'connected' : ''}`}>{connectionStatus === 'connected' ? 'Connected' : 'Disconnected'}</span>
+                <span
+                  className={`live-dot ${
+                    connectionStatus === 'connected' ? 'active' : ''
+                  }`}
+                />
+                <span
+                  className={`live-status-text ${
+                    connectionStatus === 'connected' ? 'connected' : ''
+                  }`}
+                >
+                  {connectionStatus === 'connected'
+                    ? 'Connected'
+                    : 'Disconnected'}
+                </span>
               </div>
-              <button className="modal-close" onClick={() => setShowLiveModal(false)}>
+              <button
+                className="modal-close"
+                onClick={() => setShowLiveModal(false)}
+              >
                 <X size={20} />
               </button>
             </div>
-            
+
             <div className="live-content">
-              {/* Hidden canvas for frame capture */}
               <canvas ref={canvasRef} style={{ display: 'none' }} />
-              
-              {/* Camera Section */}
+
               <div className="live-camera-section">
-                
+
+                {/* ==================== CAMERA SELECTOR DROPDOWN ==================== */}
+                {availableCameras.length > 0 && (
+                  <div className="camera-selector"
+                       style={{
+                         display: 'flex',
+                         alignItems: 'center',
+                         gap: 10,
+                         marginBottom: 12,
+                         flexWrap: 'wrap'
+                       }}>
+                    <label
+                      htmlFor="camera-select"
+                      style={{ fontWeight: 600, fontSize: 14 }}
+                    >
+                      📷 Camera:
+                    </label>
+                    <select
+                      id="camera-select"
+                      value={selectedCameraId}
+                      onChange={(e) => switchCamera(e.target.value)}
+                      disabled={
+                        cameraStatus === 'starting' ||
+                        cameraStatus === 'stopping'
+                      }
+                      style={{
+                        padding: '6px 10px',
+                        borderRadius: 6,
+                        border: '1px solid var(--border-color, #444)',
+                        background: 'var(--bg-secondary, #2a2a2a)',
+                        color: 'var(--text-primary, #fff)',
+                        fontSize: 13,
+                        minWidth: 220,
+                        cursor: 'pointer'
+                      }}
+                    >
+                      <option value="">Auto-detect (recommended)</option>
+                      {availableCameras.map((cam, idx) => (
+                        <option key={cam.deviceId} value={cam.deviceId}>
+                          {getCameraDisplayLabel(cam, idx)}
+                        </option>
+                      ))}
+                    </select>
+                    <button
+                      type="button"
+                      className="btn btn-secondary"
+                      onClick={enumerateCameras}
+                      style={{
+                        padding: '6px 10px',
+                        fontSize: 12
+                      }}
+                      title="Refresh camera list"
+                    >
+                      <RefreshCw size={14} />
+                    </button>
+                    {activeCameraLabel && cameraStatus === 'active' && (
+                      <span style={{
+                        fontSize: 12,
+                        color: 'var(--text-secondary, #999)',
+                        fontStyle: 'italic'
+                      }}>
+                        Live: {activeCameraLabel.slice(0, 35)}
+                        {activeCameraLabel.length > 35 ? '…' : ''}
+                      </span>
+                    )}
+                  </div>
+                )}
+
                 <div className="camera-preview-wrapper">
                   {cameraStatus === 'idle' && (
                     <div className="camera-placeholder">
                       <Camera size={48} />
-                     
+                      <p>Camera Ready</p>
+                      <span>
+                        {availableCameras.length > 0
+                          ? `${availableCameras.length} camera(s) detected`
+                          : 'Click Start Monitoring to begin'}
+                      </span>
                     </div>
                   )}
+
                   {cameraStatus === 'starting' && (
                     <div className="camera-loading">
                       <RefreshCw size={32} className="spin" />
                       <p>Starting camera...</p>
+                      <span>This can take a few seconds</span>
                     </div>
                   )}
+
                   {cameraStatus === 'active' && (
                     <video
                       ref={videoRef}
@@ -1185,13 +1781,23 @@ function App() {
                       muted
                     />
                   )}
+
                   {cameraStatus === 'error' && (
                     <div className="camera-placeholder camera-error-state">
                       <AlertCircle size={48} />
                       <p>Camera Error</p>
                       <span>{cameraError}</span>
+                      <button
+                        className="btn btn-primary"
+                        onClick={retryCamera}
+                        style={{ marginTop: 12 }}
+                      >
+                        <RefreshCw size={16} />
+                        Retry
+                      </button>
                     </div>
                   )}
+
                   {cameraStatus === 'stopping' && (
                     <div className="camera-loading">
                       <RefreshCw size={32} className="spin" />
@@ -1199,15 +1805,20 @@ function App() {
                     </div>
                   )}
                 </div>
-                
-                {/* Camera Controls */}
+
                 <div className="camera-controls">
                   <button
-                    className={`btn ${isMonitoring ? 'btn-danger' : 'btn-success'} btn-camera-toggle`}
+                    className={`btn ${
+                      isMonitoring ? 'btn-danger' : 'btn-success'
+                    } btn-camera-toggle`}
                     onClick={toggleMonitoring}
-                    disabled={cameraStatus === 'starting' || cameraStatus === 'stopping'}
+                    disabled={
+                      cameraStatus === 'starting' ||
+                      cameraStatus === 'stopping'
+                    }
                   >
-                    {cameraStatus === 'starting' || cameraStatus === 'stopping' ? (
+                    {cameraStatus === 'starting' ||
+                    cameraStatus === 'stopping' ? (
                       <>
                         <RefreshCw size={18} className="spin" />
                         {isMonitoring ? 'Stopping...' : 'Starting...'}
@@ -1224,6 +1835,17 @@ function App() {
                       </>
                     )}
                   </button>
+
+                  {cameraStatus === 'error' && (
+                    <button
+                      className="btn btn-secondary"
+                      onClick={retryCamera}
+                    >
+                      <RefreshCw size={16} />
+                      Retry
+                    </button>
+                  )}
+
                   {isProcessingFrame && (
                     <div className="camera-processing-indicator">
                       <RefreshCw size={16} className="spin" />
@@ -1231,51 +1853,86 @@ function App() {
                     </div>
                   )}
                 </div>
-                
-                {/* Camera Error Display */}
+
+                {/* ==================== ENHANCED ERROR HINT BOX ==================== */}
                 {cameraError && (
                   <div className="camera-error-display">
                     <AlertCircle size={16} />
                     <span>{cameraError}</span>
                   </div>
                 )}
+
+                {cameraBusyError && (
+                  <div
+                    className="hint-box"
+                    style={{
+                      marginTop: 8,
+                      padding: '10px 12px',
+                      background: 'rgba(255, 200, 0, 0.1)',
+                      border: '1px solid rgba(255, 200, 0, 0.3)',
+                      borderRadius: 6,
+                      fontSize: 13,
+                      color: 'var(--text-secondary, #ccc)',
+                      lineHeight: 1.5
+                    }}
+                  >
+                    💡 <strong>Tip:</strong> Close any video calling apps
+                    (Zoom, Teams, Skype, OBS) or other browser tabs that might
+                    be using the camera, then click <strong>Retry</strong>.
+                    If using a USB webcam, try unplugging and re-plugging it.
+                  </div>
+                )}
               </div>
-              
-              {/* Stats and Detection Results Row */}
+
               <div className="live-stats-row">
-                {/* Live Detection Stats */}
                 <div className="live-stats-summary">
                   <div className="live-stat">
-                    <span className="live-stat-value">{liveDetections.length}</span>
+                    <span className="live-stat-value">
+                      {liveDetections.length}
+                    </span>
                     <span className="live-stat-label">This Session</span>
                   </div>
                   <div className="live-stat">
-                    <span className="live-stat-value">{liveData.total || 0}</span>
+                    <span className="live-stat-value">
+                      {liveData.total || 0}
+                    </span>
                     <span className="live-stat-label">Total</span>
                   </div>
                   <div className="live-stat">
-                    <span className="live-stat-value">{isMonitoring ? 'ON' : 'OFF'}</span>
+                    <span className="live-stat-value">
+                      {isMonitoring ? 'ON' : 'OFF'}
+                    </span>
                     <span className="live-stat-label">Camera</span>
                   </div>
                 </div>
-                
-                {/* Session Detections */}
+
                 <div className="live-session-detections">
                   <h3>
                     <Camera size={16} />
                     Camera Detections
-                    {isMonitoring && <span className="live-badge-small">LIVE</span>}
+                    {isMonitoring && (
+                      <span className="live-badge-small">LIVE</span>
+                    )}
                   </h3>
                   {liveDetections.length > 0 ? (
                     <div className="live-detections-list live-detections-scroll">
                       {liveDetections.map((detection, index) => (
-                        <div key={detection.id || index} className="live-detection-item live-item">
+                        <div
+                          key={detection.id || index}
+                          className="live-detection-item live-item"
+                        >
                           <div className="detection-info">
-                            <span className="detection-plate">{detection.plate_number}</span>
-                            <span className="detection-state badge">{detection.state}</span>
+                            <span className="detection-plate">
+                              {detection.plate_number}
+                            </span>
+                            <span className="detection-state badge">
+                              {detection.state}
+                            </span>
                           </div>
                           <div className="detection-meta">
-                            <span className="detection-confidence">{detection.confidence?.toFixed(1)}%</span>
+                            <span className="detection-confidence">
+                              {formatConfidence(detection.confidence)}
+                            </span>
                             <span className="detection-time">
                               {new Date(detection.timestamp).toLocaleTimeString()}
                             </span>
@@ -1293,15 +1950,22 @@ function App() {
                 </div>
               </div>
             </div>
-            
+
             <div className="modal-actions">
-              <button className="btn btn-secondary" onClick={() => {
-                setShowLiveModal(false);
-                fetchDashboardData();
-              }}>
+              <button
+                className="btn btn-secondary"
+                onClick={() => {
+                  setShowLiveModal(false);
+                  fetchDashboardData();
+                }}
+              >
                 Close
               </button>
-              <button className="btn btn-primary" onClick={fetchLiveData} disabled={loading}>
+              <button
+                className="btn btn-primary"
+                onClick={fetchLiveData}
+                disabled={loading}
+              >
                 {loading ? 'Refreshing...' : 'Refresh Data'}
               </button>
             </div>
