@@ -1,928 +1,724 @@
-# # main.py — PRODUCTION-READY BACKEND
-# # Run with: python main.py
-
-# import cv2
-# import numpy as np
-# import re
-# import os
-# import json
-# import tempfile
-# import traceback
-# from flask import Flask, request, jsonify
-# from ultralytics import YOLO
-# from paddleocr import PaddleOCR
-
-# # =========================
-# # FLASK APP
-# # =========================
-# app = Flask(__name__)
-
-# # =========================
-# # LOAD MODELS (safe, version-aware)
-# # =========================
-# BASE_DIR = os.path.dirname(os.path.abspath(__file__))
-# YOLO_PATH = os.path.join(BASE_DIR, "best.pt")
-
-# print("[STARTUP] Loading YOLO model...")
-# try:
-#     if not os.path.exists(YOLO_PATH):
-#         raise FileNotFoundError(f"best.pt not found at {YOLO_PATH}")
-#     yolo_model = YOLO(YOLO_PATH)
-#     print("[STARTUP] ✅ YOLO loaded")
-# except Exception as e:
-#     print(f"[STARTUP] ❌ YOLO failed: {e}")
-#     yolo_model = None
-
-# print("[STARTUP] Loading PaddleOCR...")
-# ocr = None
-# try:
-#     # Try modern API first (2.8+)
-#     ocr = PaddleOCR(lang="en", show_log=False)
-#     # Test if it works
-#     _ = ocr.ocr(np.ones((50, 150, 3), dtype=np.uint8) * 255)
-#     print("[STARTUP] ✅ PaddleOCR loaded (modern API)")
-# except Exception:
-#     try:
-#         # Fallback to older API
-#         ocr = PaddleOCR(use_angle_cls=False, lang="en", show_log=False)
-#         print("[STARTUP] ✅ PaddleOCR loaded (legacy API)")
-#     except Exception as e:
-#         print(f"[STARTUP] ❌ PaddleOCR failed: {e}")
-
-# # =========================
-# # VALID NIGERIAN STATES
-# # =========================
-# VALID_STATES = {
-#     "ABUJA": ["FCT", "ABJ", "ABUJA"], "LAGOS": ["LAG", "LGS", "LAGOS"],
-#     "KANO": ["KAN", "KANO"], "OGUN": ["OGN", "OGUN"], "OYO": ["OYO"],
-#     "RIVERS": ["RIV", "RIVERS"], "KADUNA": ["KAD", "KADUNA"],
-#     "ENUGU": ["ENU", "ENUGU"], "DELTA": ["DEL", "DELTA"], "EDO": ["EDO"],
-#     "ANAMBRA": ["ANM", "ANAMBRA"], "IMO": ["IMO"],
-#     "AKWAIBOM": ["AKW", "AKWAIBOM", "AKWA"], "CROSSRIVER": ["CRS", "CROSSRIVER"],
-#     "BORNO": ["BOR", "BORNO"], "NIGER": ["NIG", "NIGER"],
-#     "PLATEAU": ["PLT", "PLATEAU"], "KWARA": ["KWR", "KWARA"],
-#     "EKITI": ["EKT", "EKITI"], "OSUN": ["OSN", "OSUN"], "ONDO": ["OND", "ONDO"],
-#     "BAYELSA": ["BAY", "BAYELSA"], "ZAMFARA": ["ZAM", "ZAMFARA"],
-#     "KEBBI": ["KEB", "KEBBI"], "SOKOTO": ["SOK", "SOKOTO"],
-#     "YOBE": ["YOB", "YOBE"], "GOMBE": ["GOM", "GOMBE"],
-#     "NASARAWA": ["NAS", "NASARAWA"], "TARABA": ["TAR", "TARABA"],
-#     "JIGAWA": ["JIG", "JIGAWA"], "KOGI": ["KOG", "KOGI"],
-#     "BENUE": ["BEN", "BENUE"], "EBONYI": ["EBO", "EBONYI"],
-#     "ADAMAWA": ["ADA", "ADAMAWA"], "BAUCHI": ["BAU", "BAUCHI"],
-#     "KATSINA": ["KAT", "KATSINA"],
-# }
-
-# # =========================
-# # PREPROCESSING
-# # =========================
-# def safe_crop(image, y1, y2, x1, x2, pad=12):
-#     h, w = image.shape[:2]
-#     return image[max(0,y1-pad):min(h,y2+pad), max(0,x1-pad):min(w,x2+pad)]
-
-# def upscale(img, scale=2.5):
-#     h, w = img.shape[:2]
-#     return cv2.resize(img, (max(1,int(w*scale)), max(1,int(h*scale))), interpolation=cv2.INTER_CUBIC)
-
-# def sharpen(img):
-#     k = np.array([[-1,-1,-1],[-1,9,-1],[-1,-1,-1]])
-#     return cv2.filter2D(img, -1, k)
-
-# def white_border(img, pad=20):
-#     return cv2.copyMakeBorder(img, pad, pad, pad, pad, cv2.BORDER_CONSTANT, value=[255,255,255])
-
-# def preprocess_standard(img):
-#     img = upscale(img, 2.5)
-#     gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
-#     gray = cv2.createCLAHE(3.0, (8,8)).apply(gray)
-#     gray = cv2.GaussianBlur(gray, (3,3), 0)
-#     return white_border(sharpen(cv2.cvtColor(gray, cv2.COLOR_GRAY2BGR)))
-
-# def preprocess_aggressive(img):
-#     img = upscale(img, 3.0)
-#     gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
-#     gray = cv2.createCLAHE(5.0, (8,8)).apply(gray)
-#     _, gray = cv2.threshold(gray, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)
-#     return white_border(sharpen(cv2.cvtColor(gray, cv2.COLOR_GRAY2BGR)))
-
-# def preprocess_morph(img):
-#     img = upscale(img, 2.5)
-#     gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
-#     kernel = cv2.getStructuringElement(cv2.MORPH_RECT, (25,25))
-#     gray = cv2.morphologyEx(gray, cv2.MORPH_TOPHAT, kernel)
-#     gray = cv2.createCLAHE(3.0, (8,8)).apply(gray)
-#     gray = cv2.GaussianBlur(gray, (3,3), 0)
-#     return white_border(cv2.cvtColor(gray, cv2.COLOR_GRAY2BGR))
-
-# def split_plate_regions(img: np.ndarray):
-#     """
-#     Tighter crops to exclude slogans/frames.
-#     Middle zone reduced to 35%-75% of height.
-#     """
-#     h = img.shape[0]
-#     # State name is usually in the top 25%
-#     top    = img[0 : int(h * 0.25), :]
-#     # Plate number is the big text in the center
-#     middle = img[int(h * 0.35) : int(h * 0.75), :]
-#     # Republic name/slogan is in the bottom 25%
-#     bottom = img[int(h * 0.75) :, :]
-#     return top, middle, bottom
-
-# # =========================
-# # OCR ENGINE
-# # =========================
-# def run_ocr(img):
-#     """Run OCR safely across PaddleOCR versions."""
-#     if ocr is None:
-#         return [], []
-#     try:
-#         # Try modern .ocr() first, fallback to .predict()
-#         if hasattr(ocr, 'ocr'):
-#             res = ocr.ocr(img, cls=False)
-#         else:
-#             res = ocr.predict(img)
-        
-#         texts, scores = [], []
-#         if not res: return texts, scores
-#         block = res[0] if isinstance(res, list) else res
-#         if isinstance(block, dict):
-#             texts = block.get("rec_texts", [])
-#             scores = block.get("rec_scores", [])
-#         elif isinstance(block, list):
-#             for line in block:
-#                 if line and len(line) >= 2:
-#                     txt, sc = line[1] if isinstance(line[1], (list,tuple)) else (line[0], line[1])
-#                     if isinstance(txt, str) and txt.strip():
-#                         texts.append(txt.strip())
-#                         scores.append(float(sc))
-#         return texts, scores
-#     except Exception as e:
-#         print(f"      [OCR ERROR] {e}")
-#         return [], []
-
-# def run_all_ocr_passes(img):
-#     pipelines = [("standard", preprocess_standard), ("aggressive", preprocess_aggressive), ("morph", preprocess_morph)]
-#     best_text, best_score, best_rank = "", 0.0, -1
-#     for name, fn in pipelines:
-#         try:
-#             proc = fn(img.copy())
-#             texts, scores = run_ocr(proc)
-#             if not texts: continue
-#             combined = " ".join(texts)
-#             avg_sc = sum(scores)/len(scores)
-#             rank = len(re.sub(r"[^A-Z0-9]","",combined.upper())) + avg_sc
-#             if rank > best_rank:
-#                 best_text, best_score, best_rank = combined, avg_sc, rank
-#         except Exception as e:
-#             print(f"      [{name}] pipeline error: {e}")
-#     return best_text, best_score
-
-# # =========================
-# # TEXT EXTRACTION
-# # =========================
-# _L2D = str.maketrans("OILZSBTG", "01125876")
-# _D2L = str.maketrans("015860",   "OISGBO")
-
-# PLATE_PATTERNS = [
-#     r"([A-Z]{3})[^A-Z0-9]*(\d{3})[^A-Z0-9]*([A-Z]{2})",
-#     r"([A-Z]{2})[^A-Z0-9]*(\d{3})[^A-Z0-9]*([A-Z]{3})",
-#     r"([A-Z]{2,3})[^A-Z0-9]*(\d{2,4})[^A-Z0-9]*([A-Z]{2,3})",
-# ]
-
-# def positional_correct(text):
-#     clean = re.sub(r"[^A-Z0-9]", "", text.upper())
-#     if len(clean) < 5: return clean
-#     out = []
-#     for i, ch in enumerate(clean):
-#         if i < 3 or i >= 6:
-#             out.append(ch.translate(_D2L) if ch.isdigit() else ch)
-#         else:
-#             out.append(ch.translate(_L2D) if ch.isalpha() else ch)
-#     return "".join(out)
-
-# def extract_plate_number(raw: str) -> str:
-#     """
-#     Multi-pass extraction. Blocks long non-plate text.
-#     """
-#     # Remove obvious noise words before processing
-#     noise_words = ["FEDERAL", "REPUBLIC", "NIGERIA", "CENTRE", "UNITY", "EXCELLENCE"]
-#     text = raw.upper()
-#     for word in noise_words:
-#         text = text.replace(word, "")
-    
-#     text = text.replace(" ", "")
-    
-#     # Try pattern matching on raw and corrected text
-#     candidates = [text, positional_correct(text)]
-
-#     for candidate in candidates:
-#         for pattern in PLATE_PATTERNS:
-#             m = re.search(pattern, candidate)
-#             if m:
-#                 return "-".join(m.groups())
-
-#     # If no pattern matches, take the SHORTEST valid-looking alphanumeric block
-#     # This prevents slogans like "CENTREOFUNITY" from being returned
-#     alnum = re.sub(r"[^A-Z0-9]", "", text)
-    
-#     # Nigerian plates are usually 8 chars. If it's longer than 11, it's garbage.
-#     if 6 <= len(alnum) <= 11:
-#         return f"RAW:{alnum}"
-
-#     return "Not Found"
-
-# def extract_state(text):
-#     clean = text.upper().replace(" ", "")
-#     for state, aliases in VALID_STATES.items():
-#         for alias in aliases:
-#             if alias.replace(" ","") in clean:
-#                 return state.capitalize()
-#     for state in VALID_STATES:
-#         hits, pos = 0, 0
-#         for ch in state:
-#             idx = clean.find(ch, pos)
-#             if idx != -1: hits += 1; pos = idx + 1
-#         if hits / max(len(state),1) >= 0.6:
-#             return state.capitalize()
-#     return "Unknown"
-
-# # =========================
-# # FRAME PROCESSOR
-# # =========================
-# def process_frame(frame, label):
-#     print(f"\n[API] Processing: {label}")
-#     if yolo_model is None:
-#         print("  ❌ YOLO not loaded")
-#         return _make_result(label, "YOLO not loaded")
-#     if ocr is None:
-#         print("  ❌ OCR not loaded")
-#         return _make_result(label, "OCR not loaded")
-
-#     try:
-#         dets = yolo_model(frame, imgsz=640, verbose=False)
-#         boxes = dets[0].boxes if dets else []
-#     except Exception as e:
-#         print(f"  ❌ YOLO error: {e}")
-#         return _make_result(label, f"YOLO error: {e}")
-
-#     if not boxes:
-#         print("  → No plate detected by YOLO")
-#         return _make_result(label, "No YOLO detection")
-
-#     best = max(boxes, key=lambda b: float(b.conf[0]))
-#     yolo_conf = float(best.conf[0]) * 100
-#     x1,y1,x2,y2 = map(int, best.xyxy[0])
-#     print(f"  YOLO conf={yolo_conf:.1f}% box=({x1},{y1}→{x2},{y2})")
-
-#     crop = safe_crop(frame, y1, y2, x1, x2, pad=12)
-#     if crop.size == 0:
-#         print("  ❌ Empty crop")
-#         return _make_result(label, "Empty crop", yolo_conf)
-
-#     h,w = crop.shape[:2]
-#     if w < 30 or h < 15:
-#         print(f"  ❌ Crop too small ({w}x{h})")
-#         return _make_result(label, "Crop too small", yolo_conf)
-
-#     top_r, mid_r, bot_r = split_plate_regions(crop)
-#     print("  Running OCR passes...")
-#     mid_text, mid_conf = run_all_ocr_passes(mid_r)
-#     top_text, _ = run_all_ocr_passes(top_r)
-#     bot_text, _ = run_all_ocr_passes(bot_r)
-
-#     if not mid_text.strip() or mid_conf < 0.10:
-#         print("  ⚠️ Weak middle OCR → trying full crop")
-#         mid_text, mid_conf = run_all_ocr_passes(crop)
-
-#     plate_num = extract_plate_number(mid_text)
-#     if plate_num in ("Not Found", ""):
-#         plate_num = extract_plate_number(f"{top_text} {mid_text} {bot_text}")
-
-#     state = extract_state(f"{top_text} {bot_text}")
-#     if state == "Unknown": state = extract_state(mid_text)
-
-#     conf_pct = round(mid_conf * 100, 2)
-#     is_fmt = plate_num not in ("Not Found","") and not plate_num.startswith("RAW:")
-#     print(f"  ✅ plate='{plate_num}' state='{state}' conf={conf_pct}%")
-
-#     return {
-#         "filename": label, "plate_number": plate_num,
-#         "state_of_origin": state, "detected_state": state,
-#         "confidence": conf_pct, "yolo_conf": round(yolo_conf,2),
-#         "format_valid": is_fmt, "format_message": "Matched" if is_fmt else "Pattern not matched",
-#         "plate_format": "STANDARD" if "-" in plate_num else "INVALID",
-#         "state_match": state != "Unknown", "lgas": [],
-#         "raw_ocr_top": top_text, "raw_ocr_middle": mid_text, "raw_ocr_bottom": bot_text
-#     }
-
-# def _make_result(label, msg="Not Found", yolo_conf=0.0):
-#     return {
-#         "filename": label, "plate_number": "Not Found",
-#         "state_of_origin": "Unknown", "detected_state": "Unknown",
-#         "confidence": 0.0, "yolo_conf": round(yolo_conf,2),
-#         "format_valid": False, "format_message": msg,
-#         "plate_format": "INVALID", "state_match": False, "lgas": [],
-#         "raw_ocr_top": "", "raw_ocr_middle": "", "raw_ocr_bottom": ""
-#     }
-
-# # =========================
-# # API ROUTES
-# # =========================
-# @app.route("/api/test", methods=["GET"])
-# def api_test():
-#     return jsonify({"status":"ok", "yolo": yolo_model is not None, "ocr": ocr is not None, "message":"Backend running ✅"}), 200
-
-# @app.route("/api/process-image", methods=["POST"])
-# def api_process_image():
-#     if "file" not in request.files:
-#         return jsonify({"error":"No file field"}), 400
-#     upload = request.files["file"]
-#     data = np.frombuffer(upload.read(), dtype=np.uint8)
-#     img = cv2.imdecode(data, cv2.IMREAD_COLOR)
-#     if img is None:
-#         return jsonify({"error":"Cannot decode image"}), 400
-#     result = process_frame(img, label=upload.filename or "image")
-#     return jsonify(result), 200
-
-# @app.route("/api/process-video", methods=["POST"])
-# def api_process_video():
-#     if "file" not in request.files:
-#         return jsonify({"error":"No file field"}), 400
-#     upload = request.files["file"]
-#     ext = os.path.splitext(upload.filename)[-1] or ".mp4"
-#     tmp = tempfile.NamedTemporaryFile(delete=False, suffix=ext)
-#     try:
-#         upload.save(tmp.name); tmp.close()
-#     except Exception as e:
-#         return jsonify({"error":f"Save failed: {e}"}), 500
-
-#     try:
-#         skip = int(request.form.get("skip_frames", 10))
-#         maxf = int(request.form.get("max_frames", 100))
-#         cap = cv2.VideoCapture(tmp.name)
-#         if not cap.isOpened():
-#             return jsonify({"error":"Cannot open video"}), 400
-#         fps = cap.get(cv2.CAP_PROP_FPS) or 30.0
-#         total = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
-#         results, idx, proc = [], 0, 0
-#         while proc < maxf:
-#             ret, frame = cap.read()
-#             if not ret: break
-#             idx += 1
-#             if idx % skip != 0: continue
-#             proc += 1
-#             results.append(process_frame(frame, f"Frame {idx} ({idx/fps:.1f}s)"))
-#         cap.release()
-#     except Exception as e:
-#         traceback.print_exc()
-#         return jsonify({"error":str(e)}), 500
-#     finally:
-#         try: os.unlink(tmp.name)
-#         except: pass
-
-#     found = sum(1 for r in results if r.get("plate_number") not in ("Not Found","",None))
-#     return jsonify({"total_frames":total, "processed_frames":proc, "plates_found":found, "results":results}), 200
-
-# # =========================
-# # ENTRY POINT
-# # =========================
-# if __name__ == "__main__":
-#     print("\n" + "="*55)
-#     print("  🚗  AVLPRDL Backend — Nigerian Plate Recognition")
-#     print("="*55 + "\n")
-#     app.run(host="0.0.0.0", port=5000, debug=False)
-
-
-
-
-
 # main.py — PRODUCTION-READY BACKEND
 # Run with: python main.py
 # main.py — FIXED: targets your exact plate misreads
+
 import cv2
 import numpy as np
 import re
 import os
-import json
+import sqlite3
 import tempfile
 import traceback
+import json
+from datetime import datetime, timedelta
+from collections import Counter
 from flask import Flask, request, jsonify
+from flask_cors import CORS
 from ultralytics import YOLO
-from paddleocr import PaddleOCR
 
 app = Flask(__name__)
+CORS(app)
 
-# =========================
-# LOAD MODELS
-# =========================
-BASE_DIR  = os.path.dirname(os.path.abspath(__file__))
-YOLO_PATH = os.path.join(BASE_DIR, "best.pt")
+# ================================================================
+#  MODEL LOADING (2 YOLO MODELS)
+# ================================================================
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+DB_PATH = os.path.join(BASE_DIR, "live_data.db")
+LIVE_MAX = 200
+LIVE_RETENTION_SECONDS = 60 * 60
 
-print("[STARTUP] Loading YOLO model...")
-try:
-    if not os.path.exists(YOLO_PATH):
-        raise FileNotFoundError(f"best.pt not found at {YOLO_PATH}")
-    yolo_model = YOLO(YOLO_PATH)
-    print("[STARTUP] ✅ YOLO loaded")
-except Exception as e:
-    print(f"[STARTUP] ❌ YOLO failed: {e}")
-    yolo_model = None
+YOLO1_PATH = os.path.join(BASE_DIR, "best.pt")
+YOLO2_PATH = os.path.join(BASE_DIR, "best_2.pt")
 
-print("[STARTUP] Loading PaddleOCR...")
-ocr = None
-try:
-    ocr = PaddleOCR(lang="en", show_log=False)
-    _   = ocr.ocr(np.ones((50, 150, 3), dtype=np.uint8) * 255)
-    print("[STARTUP] ✅ PaddleOCR loaded (modern API)")
-except Exception:
+print("[STARTUP] Loading YOLO models...")
+yolo_models = []
+for path, name in [(YOLO1_PATH, "best.pt"), (YOLO2_PATH, "best_2.pt")]:
     try:
-        ocr = PaddleOCR(use_angle_cls=False, lang="en", show_log=False)
-        print("[STARTUP] ✅ PaddleOCR loaded (legacy API)")
+        if not os.path.exists(path):
+            print(f"[STARTUP] ⚠️ {name} not found at: {path} (skipping)")
+            continue
+        m = YOLO(path)
+        yolo_models.append(m)
+        print(f"[STARTUP] ✅ YOLO loaded: {name}")
     except Exception as e:
-        print(f"[STARTUP] ❌ PaddleOCR failed: {e}")
+        print(f"[STARTUP] ❌ YOLO failed to load {name}: {e}")
 
-# =========================
-# VALID NIGERIAN STATES
-# =========================
-VALID_STATES = {
-    "ABUJA":     ["FCT","ABJ","ABUJA"],   "LAGOS":    ["LAG","LGS","LAGOS"],
-    "KANO":      ["KAN","KANO"],          "OGUN":     ["OGN","OGUN"],
-    "OYO":       ["OYO"],                 "RIVERS":   ["RIV","RIVERS"],
-    "KADUNA":    ["KAD","KADUNA"],        "ENUGU":    ["ENU","ENUGU"],
-    "DELTA":     ["DEL","DELTA"],         "EDO":      ["EDO"],
-    "ANAMBRA":   ["ANM","ANAMBRA"],       "IMO":      ["IMO"],
-    "AKWAIBOM":  ["AKW","AKWAIBOM"],      "CROSSRIVER":["CRS","CROSSRIVER"],
-    "BORNO":     ["BOR","BORNO"],         "NIGER":    ["NIG","NIGER"],
-    "PLATEAU":   ["PLT","PLATEAU"],       "KWARA":    ["KWR","KWARA"],
-    "EKITI":     ["EKT","EKITI"],         "OSUN":     ["OSN","OSUN"],
-    "ONDO":      ["OND","ONDO"],          "BAYELSA":  ["BAY","BAYELSA"],
-    "ZAMFARA":   ["ZAM","ZAMFARA"],       "KEBBI":    ["KEB","KEBBI"],
-    "SOKOTO":    ["SOK","SOKOTO"],        "YOBE":     ["YOB","YOBE"],
-    "GOMBE":     ["GOM","GOMBE"],         "NASARAWA": ["NAS","NASARAWA"],
-    "TARABA":    ["TAR","TARABA"],        "JIGAWA":   ["JIG","JIGAWA"],
-    "KOGI":      ["KOG","KOGI"],          "BENUE":    ["BEN","BENUE"],
-    "EBONYI":    ["EBO","EBONYI"],        "ADAMAWA":  ["ADA","ADAMAWA"],
-    "BAUCHI":    ["BAU","BAUCHI"],        "KATSINA":  ["KAT","KATSINA"],
-}
+if not yolo_models:
+    print("[STARTUP] ❌ No YOLO models loaded. Detection will fail.")
 
-# =========================
-# PLATE FORMAT
-# Nigerian standard: LLL-DDD-LL
-# =========================
+# ================================================================
+#  OCR ENGINE (EasyOCR Only)
+# ================================================================
+print("[STARTUP] Loading EasyOCR...")
+easy_ocr = None
+try:
+    import easyocr
+    easy_ocr = easyocr.Reader(['en'], gpu=False, verbose=False)
+    print("[STARTUP] ✅ EasyOCR loaded")
+except Exception as e:
+    print(f"[STARTUP] ⚠️ EasyOCR failed: {e}")
+
+engines_loaded = 1 if easy_ocr is not None else 0
+print(f"[STARTUP] {engines_loaded} OCR engine loaded\n")
+
+
+# ================================================================
+#  LIVE DATA STORAGE (SQLite)
+# ================================================================
+def db_connect():
+    conn = sqlite3.connect(DB_PATH, timeout=30, check_same_thread=False)
+    conn.row_factory = sqlite3.Row
+    return conn
+
+
+def init_db():
+    conn = db_connect()
+    try:
+        conn.execute(
+            """
+            CREATE TABLE IF NOT EXISTS live_detections (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                plate_number TEXT,
+                plate_key TEXT,
+                state TEXT,
+                confidence REAL,
+                filename TEXT,
+                source TEXT,
+                timestamp_utc TEXT,
+                raw_json TEXT,
+                created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+                updated_at TEXT DEFAULT CURRENT_TIMESTAMP
+            )
+            """
+        )
+        conn.execute(
+            "CREATE UNIQUE INDEX IF NOT EXISTS idx_live_detections_plate_key_source ON live_detections(plate_key, source)"
+        )
+        conn.commit()
+    finally:
+        conn.close()
+
+
+init_db()
+
+
+def normalize_plate_key(plate):
+    if not plate:
+        return None
+    cleaned = re.sub(r'[^A-Z0-9]', '', str(plate).upper())
+    return cleaned if cleaned else None
+
+
+def cleanup_expired_detections(conn):
+    cutoff = (datetime.utcnow() - timedelta(seconds=LIVE_RETENTION_SECONDS)).isoformat(sep=' ', timespec='seconds')
+    conn.execute(
+        "DELETE FROM live_detections WHERE updated_at < ?",
+        (cutoff,)
+    )
+    conn.commit()
+
+
+def get_live_detections(limit=LIVE_MAX):
+    conn = db_connect()
+    try:
+        cleanup_expired_detections(conn)
+        rows = conn.execute(
+            "SELECT plate_number, state, confidence, filename, source, timestamp_utc FROM live_detections ORDER BY updated_at DESC LIMIT ?",
+            (limit,)
+        ).fetchall()
+        return [dict(row) for row in rows]
+    finally:
+        conn.close()
+
+
+def add_or_update_live_detection(payload):
+    plate_number = payload.get("plate_number") or payload.get("plate") or "Unknown"
+    plate_key = normalize_plate_key(plate_number)
+    source = payload.get("source") or "live-camera"
+    state = payload.get("state_of_origin") or payload.get("state") or payload.get("detected_state") or "Unknown"
+    confidence = float(payload.get("confidence") or payload.get("yolo_conf") or 0.0)
+    filename = payload.get("filename") or "live-camera"
+    timestamp_utc = datetime.utcnow().isoformat() + 'Z'
+    raw_json = json.dumps(payload, default=str)
+
+    conn = db_connect()
+    try:
+        cleanup_expired_detections(conn)
+        existing = None
+        if plate_key:
+            existing = conn.execute(
+                "SELECT id, confidence FROM live_detections WHERE plate_key = ? AND source = ?",
+                (plate_key, source)
+            ).fetchone()
+
+        if existing:
+            should_update = confidence >= existing["confidence"]
+            if should_update:
+                conn.execute(
+                    "UPDATE live_detections SET plate_number = ?, state = ?, confidence = ?, filename = ?, timestamp_utc = ?, raw_json = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?",
+                    (plate_number, state, confidence, filename, timestamp_utc, raw_json, existing["id"])
+                )
+        else:
+            conn.execute(
+                "INSERT INTO live_detections (plate_number, plate_key, state, confidence, filename, source, timestamp_utc, raw_json) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+                (plate_number, plate_key, state, confidence, filename, source, timestamp_utc, raw_json)
+            )
+        conn.commit()
+    finally:
+        conn.close()
+
+
+# ================================================================
+#  PLATE FORMAT + STATE DATA
+# ================================================================
 STRICT_PLATE = re.compile(r'^[A-Z]{3}\d{3}[A-Z]{2}$')
 
 NOISE_WORDS = [
-    "FEDERAL","REPUBLIC","NIGERIA","CENTRE","CENTER",
-    "UNITY","EXCELLENCE","STATE","GOVERNMENT","OF",
-    "LAGOS","ABUJA","FCT",
+    "FEDERAL", "REPUBLIC", "NIGERIA", "CENTRE", "CENTER",
+    "UNITY", "EXCELLENCE", "STATE", "GOVERNMENT", "OF",
 ]
 
-# ── Position-aware correction ──────────────────────────────────
-# pos 0,1,2 → LETTERS  (fix digits → letters)
-# pos 3,4,5 → DIGITS   (fix letters → digits)
-# pos 6,7   → LETTERS  (fix digits → letters)
+STATE_NOISE = [
+    "LAGOS", "ABUJA", "KANO", "RIVERS", "OGUN", "EDO", "DELTA",
+    "ENUGU", "ANAMBRA", "KADUNA", "PLATEAU", "IMO", "AKWAIBOM",
+    "CROSSRIVER", "BAYELSA", "BORNO", "NIGER", "KWARA", "EKITI",
+    "OSUN", "ONDO", "KATSINA", "KEBBI", "SOKOTO", "ZAMFARA",
+    "JIGAWA", "YOBE", "GOMBE", "ADAMAWA", "BAUCHI", "TARABA",
+    "NASARAWA", "KOGI", "BENUE", "EBONYI", "OYO", "FCT",
+]
+ALL_NOISE = NOISE_WORDS + STATE_NOISE
 
 DIGIT_TO_LETTER = {
-    '0':'O','1':'I','2':'Z','3':'B','4':'A',
-    '5':'S','6':'G','7':'T','8':'B','9':'D',
+    '0': 'O', '1': 'I', '2': 'Z', '3': 'B', '4': 'A',
+    '5': 'S', '6': 'G', '7': 'T', '8': 'B', '9': 'D',
 }
 LETTER_TO_DIGIT = {
-    'O':'0','I':'1','L':'1','Z':'2','B':'8',
-    'S':'5','G':'6','T':'7','A':'4','E':'3',
-    'D':'0','Q':'0','J':'7','C':'0','F':'7',
+    'O': '0', 'I': '1', 'L': '1', 'Z': '2', 'B': '8',
+    'S': '5', 'G': '6', 'T': '7', 'A': '4', 'E': '3',
 }
 
-# ── OCR character confusion map ────────────────────────────────
-# These are the OBSERVED wrong readings from your output.
-# Applied BEFORE position correction.
-# Format: wrong_char → most_likely_correct_char
-# Only applies when the position type matches.
-#
-# From your results:
-#   CEE-333-EE  ← should be JJJ-771-JK
-#   C → J  (letter zone)
-#   E → J  (letter zone)
-#   3 → 7  (digit zone)
-#
-OCR_LETTER_FIXES = {
-    # Letters that get confused with each other in OCR
-    'C': ['G','O','Q'],   # C often misread, likely G
-    'E': ['F','B','P'],   # E often misread
-    'I': ['1','L','T'],
-    'O': ['0','Q','D'],
-    'S': ['5','8'],
-    'Z': ['2','7'],
-    'B': ['8','3','R'],
-    'D': ['0','O','Q'],
-    'J': ['I','1','U'],   # J often read as I
-    'Q': ['O','0','G'],
-    'U': ['V','W'],
-    'V': ['U','Y'],
+LGA_PREFIX_DB = {
+    # Abuja / FCT
+    "ABC": ("Abuja", "Abuja Municipal"), "ABJ": ("Abuja", "Abuja Municipal"),
+    "ABU": ("Abuja", "Abuja Municipal"), "AGW": ("Abuja", "Abaji"),
+    "BWR": ("Abuja", "Bwari"), "GWA": ("Abuja", "Gwagwalada"),
+    "KUJ": ("Abuja", "Kuje"), "KWL": ("Abuja", "Kwali"),
+    "FCT": ("Abuja", "FCT"), "FGE": ("Abuja", "FCT"),
+
+    # Lagos
+    "AGL": ("Lagos", "Agege"), "APP": ("Lagos", "Apapa"),
+    "BDG": ("Lagos", "Badagry"), "EPE": ("Lagos", "Epe"),
+    "ETI": ("Lagos", "Eti-Osa"), "FST": ("Lagos", "Festac"),
+    "GGE": ("Lagos", "Gbagada"), "IKD": ("Lagos", "Ikeja"),
+    "IKJ": ("Lagos", "Ikeja"), "IKR": ("Lagos", "Ikorodu"),
+    "JJJ": ("Lagos", "Ojo"), "JLG": ("Lagos", "Lagos Island"),
+    "KJA": ("Lagos", "Ikeja"), "KSF": ("Lagos", "Kosofe"),
+    "LAS": ("Lagos", "Lagos Island"), "LND": ("Lagos", "Lagos Mainland"),
+    "LSD": ("Lagos", "Lagos State"), "LSR": ("Lagos", "Lagos State"),
+    "MUS": ("Lagos", "Mushin"), "OJO": ("Lagos", "Ojo"),
+    "OSH": ("Lagos", "Oshodi"), "SMK": ("Lagos", "Somolu"),
+    "SUR": ("Lagos", "Surulere"), "YAB": ("Lagos", "Yaba"),
+    "AAA": ("Lagos", "Lagos Central"), "LSG": ("Lagos", "Lagos State"),
+    "EKY": ("Lagos", "Ikoyi"), "JIA": ("Lagos", "Ikeja"),
+
+    # Oyo
+    "IBA": ("Oyo", "Ibadan North"), "IBD": ("Oyo", "Ibadan"),
+    "OGB": ("Oyo", "Ogbomosho"), "OYO": ("Oyo", "Oyo"),
+
+    # Kano
+    "KAN": ("Kano", "Kano Municipal"), "KMC": ("Kano", "Kano Municipal"),
+    "FGG": ("Kano", "Fagge"), "DAL": ("Kano", "Dala"),
+
+    # Rivers
+    "PHC": ("Rivers", "Port Harcourt"), "RIV": ("Rivers", "Rivers"),
+    "RGE": ("Rivers", "Rivers East"), "OBI": ("Rivers", "Obio-Akpor"),
+
+    # Ogun
+    "ABK": ("Ogun", "Abeokuta"), "OTA": ("Ogun", "Ota"),
+    "IJB": ("Ogun", "Ijebu Ode"),
+
+    # Others
+    "BEN": ("Edo", "Benin City"), "EDS": ("Edo", "Edo State"),
+    "ASB": ("Delta", "Asaba"), "WAR": ("Delta", "Warri"),
+    "ENU": ("Enugu", "Enugu"), "NSK": ("Enugu", "Nsukka"),
+    "AWK": ("Anambra", "Awka"), "ONT": ("Anambra", "Onitsha"),
+    "KAD": ("Kaduna", "Kaduna"), "ZRA": ("Kaduna", "Zaria"),
+    "JOS": ("Plateau", "Jos"), "PLT": ("Plateau", "Plateau"),
+    "OWE": ("Imo", "Owerri"), "UYO": ("AkwaIbom", "Uyo"),
+    "CAL": ("CrossRiver", "Calabar"), "CRS": ("CrossRiver", "Cross River"),
+    "YEN": ("Bayelsa", "Yenagoa"), "MAI": ("Borno", "Maiduguri"),
+    "MIN": ("Niger", "Minna"), "ILR": ("Kwara", "Ilorin"),
+    "ADE": ("Ekiti", "Ado Ekiti"), "OSG": ("Osun", "Osogbo"),
+    "IFE": ("Osun", "Ile-Ife"), "AKR": ("Ondo", "Akure"),
+    "KAT": ("Katsina", "Katsina"), "SOK": ("Sokoto", "Sokoto"),
+    "GUS": ("Zamfara", "Gusau"), "DUT": ("Jigawa", "Dutse"),
+    "DAM": ("Yobe", "Damaturu"), "GMB": ("Gombe", "Gombe"),
+    "YOL": ("Adamawa", "Yola"), "BAU": ("Bauchi", "Bauchi"),
+    "JAL": ("Taraba", "Jalingo"), "LAF": ("Nasarawa", "Lafia"),
+    "LOK": ("Kogi", "Lokoja"), "MKD": ("Benue", "Makurdi"),
+    "ABA": ("Ebonyi", "Abakaliki"),
 }
+VALID_PREFIXES = set(LGA_PREFIX_DB.keys())
 
-OCR_DIGIT_FIXES = {
-    # Digits that get confused
-    '0': ['O','Q','D','G'],
-    '1': ['I','L','7','T'],
-    '3': ['8','B','E'],
-    '5': ['S','6'],
-    '6': ['G','b'],
-    '7': ['1','T','J','F'],   # 7 often read as 1 or T
-    '8': ['B','3'],
-    '9': ['g','q','D'],
-}
 
-# =========================
-# PREPROCESSING  (enhanced)
-# =========================
-
-def safe_crop(image, y1, y2, x1, x2, pad=12):
-    h, w = image.shape[:2]
-    return image[
-        max(0, y1-pad) : min(h, y2+pad),
-        max(0, x1-pad) : min(w, x2+pad)
-    ]
-
-def upscale(img, scale=2.5):
+# ================================================================
+#  IMAGE PREPROCESSING
+# ================================================================
+def preprocess_plate(img):
+    variants = []
     h, w = img.shape[:2]
-    return cv2.resize(
-        img,
-        (max(1, int(w*scale)), max(1, int(h*scale))),
-        interpolation=cv2.INTER_CUBIC
+    scale = 1.0
+    if w < 200: scale = 200.0 / w
+    if h < 60: scale = max(scale, 60.0 / h)
+    if scale > 1.0:
+        img = cv2.resize(img, (int(w * scale), int(h * scale)), interpolation=cv2.INTER_CUBIC)
+
+    gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
+    variants.append(gray)
+
+    clahe = cv2.createCLAHE(clipLimit=3.0, tileGridSize=(8, 8))
+    clahe_img = clahe.apply(gray)
+    variants.append(clahe_img)
+
+    _, otsu = cv2.threshold(gray, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)
+    variants.append(otsu)
+    variants.append(cv2.bitwise_not(otsu))
+
+    kernel = np.array([[0, -1, 0], [-1, 5, -1], [0, -1, 0]])
+    sharpened = cv2.filter2D(clahe_img, -1, kernel)
+    variants.append(sharpened)
+
+    adapt = cv2.adaptiveThreshold(
+        clahe_img, 255, cv2.ADAPTIVE_THRESH_GAUSSIAN_C,
+        cv2.THRESH_BINARY, 15, 8
     )
+    variants.append(adapt)
 
-def sharpen(img):
-    k = np.array([[-1,-1,-1],[-1,9,-1],[-1,-1,-1]])
-    return cv2.filter2D(img, -1, k)
+    result = []
+    for v in variants:
+        if len(v.shape) == 2:
+            result.append(cv2.cvtColor(v, cv2.COLOR_GRAY2BGR))
+        else:
+            result.append(v)
+    return result
 
-def white_border(img, pad=20):
-    return cv2.copyMakeBorder(
-        img, pad, pad, pad, pad,
-        cv2.BORDER_CONSTANT, value=[255,255,255]
-    )
 
-def preprocess_standard(img):
-    img  = upscale(img, 2.5)
-    gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
-    gray = cv2.createCLAHE(3.0, (8,8)).apply(gray)
-    gray = cv2.GaussianBlur(gray, (3,3), 0)
-    return white_border(sharpen(cv2.cvtColor(gray, cv2.COLOR_GRAY2BGR)))
+def safe_crop(image, y1, y2, x1, x2, pad=20):
+    h, w = image.shape[:2]
+    return image[max(0, y1 - pad):min(h, y2 + pad),
+                 max(0, x1 - pad):min(w, x2 + pad)]
 
-def preprocess_aggressive(img):
-    img  = upscale(img, 3.0)
-    gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
-    gray = cv2.createCLAHE(5.0, (8,8)).apply(gray)
-    _, gray = cv2.threshold(gray, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)
-    return white_border(sharpen(cv2.cvtColor(gray, cv2.COLOR_GRAY2BGR)))
-
-def preprocess_morph(img):
-    img  = upscale(img, 2.5)
-    gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
-    k    = cv2.getStructuringElement(cv2.MORPH_RECT, (25,25))
-    gray = cv2.morphologyEx(gray, cv2.MORPH_TOPHAT, k)
-    gray = cv2.createCLAHE(3.0, (8,8)).apply(gray)
-    gray = cv2.GaussianBlur(gray, (3,3), 0)
-    return white_border(cv2.cvtColor(gray, cv2.COLOR_GRAY2BGR))
-
-def preprocess_inverted(img):
-    """
-    Inverted binarization — helps when plate is dark-on-light.
-    Targets your specific plate style.
-    """
-    img  = upscale(img, 2.5)
-    gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
-    gray = cv2.createCLAHE(4.0, (8,8)).apply(gray)
-    _, gray = cv2.threshold(gray, 0, 255, cv2.THRESH_BINARY_INV + cv2.THRESH_OTSU)
-    return white_border(cv2.cvtColor(gray, cv2.COLOR_GRAY2BGR))
-
-def preprocess_denoised(img):
-    """
-    Denoising + CLAHE — helps blurry/noisy plates.
-    """
-    img  = upscale(img, 2.0)
-    gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
-    gray = cv2.fastNlMeansDenoising(gray, None, 10, 7, 21)
-    gray = cv2.createCLAHE(3.0, (8,8)).apply(gray)
-    return white_border(cv2.cvtColor(gray, cv2.COLOR_GRAY2BGR))
 
 def split_plate_regions(img):
     h = img.shape[0]
-    top    = img[0           : int(h * 0.25), :]
-    middle = img[int(h*0.35) : int(h * 0.75), :]
-    bottom = img[int(h*0.75) :,               :]
+    if h < 10: return img, img, img
+    top    = img[0:int(h * 0.25), :]
+    middle = img[int(h * 0.15):int(h * 0.85), :]
+    bottom = img[int(h * 0.75):, :]
     return top, middle, bottom
 
-# =========================
-# OCR ENGINE  (5 passes)
-# =========================
 
-def run_ocr(img):
-    if ocr is None:
-        return [], []
+# ================================================================
+#  OCR RUNNER (EasyOCR)
+# ================================================================
+def run_easyocr(img):
+    if easy_ocr is None:
+        return []
     try:
-        if hasattr(ocr, 'ocr'):
-            res = ocr.ocr(img, cls=False)
-        else:
-            res = ocr.predict(img)
-
-        texts, scores = [], []
-        if not res:
-            return texts, scores
-
-        block = res[0] if isinstance(res, list) else res
-
-        if isinstance(block, dict):
-            texts  = block.get("rec_texts",  [])
-            scores = block.get("rec_scores", [])
-
-        elif isinstance(block, list):
-            for line in block:
-                if not line or len(line) < 2:
-                    continue
-                part = line[1]
-                if isinstance(part, (list, tuple)) and len(part) == 2:
-                    txt, sc = part
-                else:
-                    txt, sc = line[0], line[1]
-                if isinstance(txt, str) and txt.strip():
-                    texts.append(txt.strip())
-                    scores.append(float(sc))
-
-        return texts, scores
+        result = easy_ocr.readtext(img, detail=0,
+                                   allowlist='ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789-')
+        return [t.strip().upper() for t in result if isinstance(t, str) and t.strip()]
     except Exception as e:
-        print(f"      [OCR ERROR] {e}")
-        return [], []
+        print(f"  [EasyOCR error] {e}")
+        return []
 
-def run_all_ocr_passes(img):
-    """
-    Run 5 preprocessing pipelines.
-    Collect ALL results, not just the best.
-    Returns list of (text, score) from all passes.
-    """
-    pipelines = [
-        ("standard",   preprocess_standard),
-        ("aggressive", preprocess_aggressive),
-        ("morph",      preprocess_morph),
-        ("inverted",   preprocess_inverted),
-        ("denoised",   preprocess_denoised),
-    ]
 
-    all_results = []
+def run_all_engines(img):
+    variants = preprocess_plate(img)
+    easy_texts = []
+    for v in variants:
+        easy_texts.extend(run_easyocr(v))
 
-    for name, fn in pipelines:
-        try:
-            proc          = fn(img.copy())
-            texts, scores = run_ocr(proc)
-            if not texts:
-                continue
-            combined = " ".join(texts)
-            avg_sc   = sum(scores) / len(scores)
-            all_results.append((combined, avg_sc, name))
-            print(f"      [{name}] '{combined}' conf={avg_sc:.2f}")
-        except Exception as e:
-            print(f"      [{name}] error: {e}")
+    seen = set()
+    deduped = [x for x in easy_texts if x not in seen and not seen.add(x)]
+    return deduped, {"easy": deduped}
 
-    if not all_results:
-        return "", 0.0, []
 
-    # Sort by confidence
-    all_results.sort(key=lambda x: x[1], reverse=True)
-    best_text, best_score, best_name = all_results[0]
-    print(f"      [BEST] '{best_text}' from {best_name}")
+# ================================================================
+#  PREFIX LOOKUP
+# ================================================================
+def levenshtein(a, b):
+    if len(a) < len(b): return levenshtein(b, a)
+    if not b: return len(a)
+    prev = list(range(len(b) + 1))
+    for i, ca in enumerate(a):
+        cur = [i + 1]
+        for j, cb in enumerate(b):
+            cur.append(min(prev[j + 1] + 1, cur[j] + 1, prev[j] + (ca != cb)))
+        prev = cur
+    return prev[-1]
 
-    # Return best text, score, and all candidate texts for voting
-    return best_text, best_score, [r[0] for r in all_results]
 
-# =========================
-# PLATE CORRECTION (FIXED)
-# =========================
+def lookup_prefix(cp):
+    if not cp or len(cp) < 3:
+        return (cp or ""), 99, "Unknown", "Unknown"
+    cp = cp[:3].upper()
+    if cp in VALID_PREFIXES:
+        s, l = LGA_PREFIX_DB[cp]
+        return cp, 0, s, l
+    best, best_d = None, 99
+    for p in VALID_PREFIXES:
+        d = levenshtein(cp, p)
+        if d < best_d:
+            best, best_d = p, d
+            if d == 0: break
+    if best and best_d == 1:
+        s, l = LGA_PREFIX_DB[best]
+        return best, 1, s, l
+    return cp, 99, "Unknown", "Unknown"
 
-def force_lll_ddd_ll(chars: str) -> str:
-    """
-    Apply position-aware correction to 8 chars → LLL-DDD-LL.
-    pos 0,1,2 → LETTERS
-    pos 3,4,5 → DIGITS
-    pos 6,7   → LETTERS
-    """
-    out = []
-    for i, ch in enumerate(chars[:8]):
-        if i < 3 or i >= 6:
-            # Letter zone: fix digits
-            out.append(DIGIT_TO_LETTER.get(ch, ch) if ch.isdigit() else ch)
-        else:
-            # Digit zone: fix letters
-            out.append(LETTER_TO_DIGIT.get(ch, ch) if ch.isalpha() else ch)
-    return "".join(out)
 
-def clean_noise(text: str) -> str:
+# ================================================================
+#  PLATE EXTRACTION (STRICTER QUALITY GATES)
+# ================================================================
+def clean_ocr_text(text):
     t = text.upper()
-    for w in NOISE_WORDS:
-        t = t.replace(w, " ")
+    for w in ALL_NOISE:
+        t = t.replace(w, ' ')
     return re.sub(r'\s+', ' ', t).strip()
 
-def extract_from_chars(chars: str) -> str:
+
+def force_lll_ddd_ll(chars):
     """
-    Try to extract LLL-DDD-LL from a cleaned char string.
-    Uses sliding window of size 8.
-    Returns formatted plate or empty string.
+    Force ANY 8-char string into LLL-DDD-LL format.
+    Returns None if more than 2 unknowns (likely garbage from noisy frames).
     """
-    if len(chars) < 6:
-        return ""
+    if len(chars) < 8:
+        chars = chars.ljust(8, '0')
 
-    # Slide 8-char window
-    for start in range(max(1, len(chars) - 10)):
-        window    = chars[start : start + 8]
-        if len(window) < 8:
-            window = window.ljust(8, '0')
-        corrected = force_lll_ddd_ll(window)
-        if STRICT_PLATE.match(corrected):
-            return f"{corrected[:3]}-{corrected[3:6]}-{corrected[6:8]}"
+    out = []
+    unknown_count = 0
 
-    # Last resort: first 8 chars
-    if len(chars) >= 8:
-        forced = force_lll_ddd_ll(chars[:8])
-        if STRICT_PLATE.match(forced):
-            return f"{forced[:3]}-{forced[3:6]}-{forced[6:8]}"
+    for i, ch in enumerate(chars[:8]):
+        if i < 3 or i >= 6:  # letter positions
+            if ch.isdigit():
+                out.append(DIGIT_TO_LETTER.get(ch, 'A'))
+            elif ch.isalpha():
+                out.append(ch)
+            else:
+                out.append('A')
+                unknown_count += 1
+        else:  # digit positions
+            if ch.isdigit():
+                out.append(ch)
+            elif ch in LETTER_TO_DIGIT:
+                out.append(LETTER_TO_DIGIT[ch])
+            else:
+                out.append('0')
+                unknown_count += 1
 
-    return ""
+    if unknown_count > 2:
+        return None
+    return "".join(out)
 
-def multi_candidate_extract(all_texts: list) -> str:
-    """
-    Try to extract a valid plate from MULTIPLE OCR candidate texts.
-    Each text comes from a different preprocessing pipeline.
-    Returns the first valid plate found, or "Not Found".
 
-    This is the KEY fix — instead of giving up after one OCR pass,
-    we try all 5 preprocessing results.
-    """
+def _try_extract_8chars(raw_text):
+    chars = re.sub(r'[^A-Z0-9]', '', raw_text.upper())
+    if len(chars) < 8:
+        return None
+    corrected = force_lll_ddd_ll(chars[:8])
+    if not corrected or not STRICT_PLATE.match(corrected):
+        return None
+
+    mp, dist, state, lga = lookup_prefix(corrected[:3])
+    final = mp + corrected[3:] if dist <= 1 else corrected
+    if dist > 1:
+        state, lga = "Unknown", "Unknown"
+    if not STRICT_PLATE.match(final):
+        final = corrected
+
+    plate = f"{final[:3]}-{final[3:6]}-{final[6:8]}"
+    score = 15 + sum(1 for a, b in zip(chars[:8], final) if a == b)
+    if dist == 0:
+        score += 20
+    elif dist == 1:
+        score += 8
+    return (plate, score, dist, state, lga)
+
+
+def extract_plate_from_texts(texts, debug_log=None):
+    log = debug_log if debug_log is not None else []
+    if not texts:
+        log.append("  ⛔ No OCR texts provided")
+        return ("", 0, 99, "Unknown", "Unknown")
+
+    # Drop OCR noise (< 4 alphanumeric chars)
+    clean_texts = [
+        t for t in texts
+        if t and len(re.sub(r'[^A-Z0-9]', '', t.upper())) >= 4
+    ]
+    if not clean_texts:
+        log.append("  ⛔ All texts too short (< 4 chars)")
+        return ("", 0, 99, "Unknown", "Unknown")
+
+    log.append(f"  📥 Input: {len(clean_texts)} usable texts → {clean_texts[:8]}")
     candidates = []
 
-    for raw in all_texts:
-        if not raw:
+    # Phase 1: Sliding window on each text
+    for raw in clean_texts:
+        chars = re.sub(r'[^A-Z0-9]', '', clean_ocr_text(raw).upper())
+        if len(chars) < 6:
             continue
-        text  = clean_noise(raw)
-        chars = re.sub(r'[^A-Z0-9]', '', text.upper())
-        plate = extract_from_chars(chars)
-        if plate:
-            candidates.append(plate)
-            print(f"  [CANDIDATE] '{raw}' → '{plate}'")
+        for start in range(max(1, len(chars) - 7)):
+            window = chars[start:start + 8]
+            if len(window) == 8:
+                res = _try_extract_8chars(window)
+                if res:
+                    candidates.append(res)
 
-    if not candidates:
-        return "Not Found"
+    if candidates:
+        candidates.sort(key=lambda x: x[1], reverse=True)
+        log.append(f"  ✅ Phase 1 → {candidates[0][0]} (score={candidates[0][1]})")
+        return candidates[0]
 
-    # Vote: most common plate wins
-    from collections import Counter
-    winner = Counter(candidates).most_common(1)[0][0]
-    print(f"  [VOTE] candidates={candidates} → winner='{winner}'")
-    return winner
+    # Phase 2: Combined texts
+    combined = re.sub(r'[^A-Z0-9]', '', clean_ocr_text(' '.join(clean_texts)))
+    if len(combined) >= 8:
+        for start in range(max(1, len(combined) - 7)):
+            window = combined[start:start + 8]
+            if len(window) == 8:
+                res = _try_extract_8chars(window)
+                if res:
+                    candidates.append(res)
 
-def extract_plate_number(raw: str, all_texts: list = None) -> str:
-    """
-    Extract LLL-DDD-LL plate.
-    Uses all OCR candidates if available.
-    """
-    # Try all candidates first (multi-pass)
-    if all_texts:
-        result = multi_candidate_extract(all_texts)
-        if result != "Not Found":
-            return result
+    if candidates:
+        candidates.sort(key=lambda x: x[1], reverse=True)
+        log.append(f"  ✅ Phase 2 → {candidates[0][0]} (score={candidates[0][1]})")
+        return candidates[0]
 
-    # Fallback: single text
-    text  = clean_noise(raw)
-    chars = re.sub(r'[^A-Z0-9]', '', text.upper())
-    plate = extract_from_chars(chars)
+    # Phase 3: Force format on each text >= 6 chars
+    for raw in clean_texts:
+        chars = re.sub(r'[^A-Z0-9]', '', raw.upper())
+        if len(chars) >= 6:
+            padded = chars[:8].ljust(8, '0')
+            corrected = force_lll_ddd_ll(padded)
+            if corrected and STRICT_PLATE.match(corrected):
+                mp, dist, st, lg = lookup_prefix(corrected[:3])
+                final = mp + corrected[3:] if dist <= 1 else corrected
+                if dist > 1:
+                    st, lg = "Unknown", "Unknown"
+                if not STRICT_PLATE.match(final):
+                    final = corrected
+                plate = f"{final[:3]}-{final[3:6]}-{final[6:8]}"
+                log.append(f"  ✅ Phase 3 → {plate}")
+                return (plate, 8, dist, st, lg)
 
-    if plate:
-        return plate
+    # Removed previous Phase 4 & 5 — they invented garbage from noise frames
+    log.append("  ⛔ No reliable plate found")
+    return ("", 0, 99, "Unknown", "Unknown")
 
-    print(f"  [EXTRACT] ❌ No plate found in '{chars}'")
-    return "Not Found"
 
-def extract_state(text: str) -> str:
+def extract_state_from_text(text):
     clean = text.upper().replace(" ", "")
-    for state, aliases in VALID_STATES.items():
-        for alias in aliases:
-            if alias.replace(" ", "") in clean:
-                return state.capitalize()
-    for state in VALID_STATES:
-        hits, pos = 0, 0
-        for ch in state:
-            idx = clean.find(ch, pos)
-            if idx != -1:
-                hits += 1
-                pos  = idx + 1
-        if hits / max(len(state), 1) >= 0.6:
-            return state.capitalize()
+    state_kw = {
+        "LAGOS": "Lagos", "ABUJA": "Abuja", "KANO": "Kano",
+        "RIVERS": "Rivers", "OGUN": "Ogun", "EDO": "Edo",
+        "DELTA": "Delta", "ENUGU": "Enugu", "ANAMBRA": "Anambra",
+        "KADUNA": "Kaduna", "IMO": "Imo", "OYO": "Oyo",
+        "BAUCHI": "Bauchi", "BORNO": "Borno", "PLATEAU": "Plateau",
+        "ONDO": "Ondo", "OSUN": "Osun", "EKITI": "Ekiti",
+        "KOGI": "Kogi", "BENUE": "Benue", "TARABA": "Taraba",
+        "SOKOTO": "Sokoto", "KEBBI": "Kebbi", "ZAMFARA": "Zamfara",
+        "KATSINA": "Katsina", "JIGAWA": "Jigawa", "YOBE": "Yobe",
+        "GOMBE": "Gombe", "NIGER": "Niger", "KWARA": "Kwara",
+        "NASARAWA": "Nasarawa", "EBONYI": "Ebonyi", "BAYELSA": "Bayelsa",
+    }
+    for kw, st in state_kw.items():
+        if kw in clean:
+            return st
     return "Unknown"
 
-# =========================
-# FRAME PROCESSOR
-# =========================
 
-def process_frame(frame, label: str) -> dict:
-    print(f"\n[API] Processing: {label}")
+# ================================================================
+#  YOLO & CONFIDENCE
+# ================================================================
+def detect_best_plate_box(frame):
+    if not yolo_models:
+        return None, 0.0
+    best_box, best_conf = None, -1.0
+    for model in yolo_models:
+        for imgsz in [640, 1280]:
+            try:
+                dets = model(frame, imgsz=imgsz, verbose=False, conf=0.10)
+                boxes = dets[0].boxes if dets else []
+            except Exception:
+                continue
+            for b in boxes:
+                try:
+                    conf = float(b.conf[0])
+                    if conf > best_conf:
+                        best_conf = conf
+                        best_box = b
+                except Exception:
+                    continue
+    if best_box is None:
+        return None, 0.0
+    return best_box, best_conf * 100
 
-    if yolo_model is None:
-        return _make_result(label, "YOLO not loaded")
-    if ocr is None:
-        return _make_result(label, "OCR not loaded")
 
-    # ── YOLO ─────────────────────────────────────────────────
-    try:
-        dets  = yolo_model(frame, imgsz=640, verbose=False)
-        boxes = dets[0].boxes if dets else []
-    except Exception as e:
-        return _make_result(label, f"YOLO error: {e}")
+def compute_confidence(yolo_conf, plate_score, prefix_dist, engines_agreed, plate_valid):
+    if not plate_valid:
+        return 0.0
+    base   = min(yolo_conf * 0.35, 35.0)
+    ocr    = min(plate_score * 0.5, 30.0)
+    prefix = 15.0 if prefix_dist == 0 else (7.0 if prefix_dist == 1 else 2.0)
+    agree  = min(engines_agreed * 10.0, 10.0)
+    total  = max(35.0, min(base + ocr + prefix + agree, 92.0))
+    return round(total, 1)
 
-    if not boxes:
-        print("  → No plate detected")
-        return _make_result(label, "No YOLO detection")
 
-    best      = max(boxes, key=lambda b: float(b.conf[0]))
-    yolo_conf = float(best.conf[0]) * 100
-    x1, y1, x2, y2 = map(int, best.xyxy[0])
-    print(f"  YOLO conf={yolo_conf:.1f}%  box=({x1},{y1}→{x2},{y2})")
+# ================================================================
+#  DEDUPLICATION
+# ================================================================
+def plate_is_duplicate(plate, seen):
+    if not plate or plate == "Not Found":
+        return False
+    clean = re.sub(r'[^A-Z0-9]', '', plate.upper())
+    if len(clean) != 8:
+        return plate in seen
+    key = clean[:3] + "*" + clean[6:8]
+    for sp in seen:
+        spc = re.sub(r'[^A-Z0-9]', '', sp.upper())
+        if len(spc) == 8 and spc[:3] + "*" + spc[6:8] == key:
+            return True
+    return False
 
-    # ── Crop ─────────────────────────────────────────────────
-    crop = safe_crop(frame, y1, y2, x1, x2, pad=12)
-    if crop.size == 0:
-        return _make_result(label, "Empty crop", yolo_conf)
 
-    h, w = crop.shape[:2]
-    if w < 30 or h < 15:
-        return _make_result(label, f"Crop too small ({w}×{h})", yolo_conf)
+# ================================================================
+#  FRAME PROCESSOR
+# ================================================================
+def _make_result(label, msg="Not Found", yolo_conf=0.0, debug=None):
+    return {
+        "filename": label,
+        "plate_number": "Not Found",
+        "state_of_origin": "Unknown",
+        "detected_state": "Unknown",
+        "lga": "Unknown",
+        "confidence": 0.0,
+        "yolo_conf": round(yolo_conf, 2),
+        "format_valid": False,
+        "format_message": msg,
+        "plate_format": "INVALID",
+        "state_match": False,
+        "lgas": [],
+        "raw_ocr_middle": "",
+        "raw_ocr_top": "",
+        "raw_ocr_bottom": "",
+        "ocr_engines": {},
+        "debug_log": debug or [],
+    }
 
-    # ── OCR (5 passes) ────────────────────────────────────────
-    top_r, mid_r, bot_r = split_plate_regions(crop)
 
-    print("  [MID REGION OCR]")
-    mid_text, mid_conf, mid_all = run_all_ocr_passes(mid_r)
+def process_frame(frame, label=""):
+    debug = [f"Image: {label}"]
+    if not yolo_models:
+        return _make_result(label, "YOLO models not loaded", debug=debug)
+    if engines_loaded == 0:
+        return _make_result(label, "OCR engine not loaded", debug=debug)
 
-    print("  [TOP REGION OCR]")
-    top_text, _, top_all = run_all_ocr_passes(top_r)
+    best_box, yolo_conf = detect_best_plate_box(frame)
+    all_texts = []
+    eng_dict = {"easy": []}
+    crop_used = "N/A"
+    ocr_state_text = "Unknown"
 
-    print("  [BOT REGION OCR]")
-    bot_text, _, bot_all = run_all_ocr_passes(bot_r)
+    if best_box is not None:
+        x1, y1, x2, y2 = map(int, best_box.xyxy[0])
+        debug.append(f"🎯 YOLO: {yolo_conf:.1f}% box=({x1},{y1}→{x2},{y2})")
 
-    # Fallback: full crop
-    if not mid_text.strip() or mid_conf < 0.10:
-        print("  ⚠️  Weak middle OCR → full crop")
-        mid_text, mid_conf, mid_all = run_all_ocr_passes(crop)
+        crop = safe_crop(frame, y1, y2, x1, x2, pad=20)
+        if crop.size > 0:
+            ch, cw = crop.shape[:2]
+            crop_used = f"{cw}×{ch}"
+            top_r, mid_r, bot_r = split_plate_regions(crop)
 
-    # ── Extract plate (multi-candidate) ──────────────────────
-    # Pass ALL 5 OCR results from each region
-    all_candidates = mid_all + top_all + bot_all
-    plate_num = extract_plate_number(mid_text, all_texts=all_candidates)
+            top_texts, _ = run_all_engines(top_r)
+            mid_texts, mid_eng = run_all_engines(mid_r)
+            bot_texts, _ = run_all_engines(bot_r)
+            full_texts, full_eng = run_all_engines(crop)
 
-    # ── Extract state ─────────────────────────────────────────
-    state = extract_state(f"{top_text} {bot_text}")
-    if state == "Unknown":
-        state = extract_state(mid_text)
+            all_texts = mid_texts + full_texts + top_texts + bot_texts
+            ocr_state_text = extract_state_from_text(" ".join(all_texts))
+            eng_dict["easy"] = list(dict.fromkeys(
+                mid_eng.get("easy", []) + full_eng.get("easy", [])
+            ))
+    else:
+        debug.append("⚠️ YOLO: no detection → full-frame OCR")
+        all_texts, eng_dict = run_all_engines(frame)
+        crop_used = "full-frame"
 
-    conf_pct = round(mid_conf * 100, 2)
-    is_fmt   = (
-        plate_num != "Not Found"
-        and plate_num != ""
-        and "-" in plate_num
+    plate_num, plate_score, prefix_dist, state, lga = \
+        extract_plate_from_texts(all_texts, debug)
+
+    if not plate_num:
+        plate_num = "Not Found"
+    if state == "Unknown" and ocr_state_text != "Unknown":
+        state = ocr_state_text
+
+    is_fmt = plate_num not in ("Not Found", "")
+    is_strict = bool(STRICT_PLATE.match(re.sub(r'[^A-Z0-9]', '', plate_num.upper()))) if is_fmt else False
+
+    engines_agreed = 0
+    if is_fmt:
+        pchars = re.sub(r'[^A-Z0-9]', '', plate_num)
+        for t in eng_dict.get("easy", []):
+            tc = re.sub(r'[^A-Z0-9]', '', t)
+            if len(tc) >= 5 and sum(1 for a, b in zip(tc[:8], pchars[:8]) if a == b) >= 5:
+                engines_agreed += 1
+                break
+
+    conf = compute_confidence(
+        yolo_conf,
+        plate_score if is_fmt else 0,
+        prefix_dist if is_fmt else 99,
+        engines_agreed,
+        is_fmt
     )
 
-    print(f"  ✅ plate='{plate_num}'  state='{state}'  conf={conf_pct}%")
-
     return {
-        "filename"       : label,
-        "plate_number"   : plate_num,
+        "filename": label,
+        "plate_number": plate_num,
         "state_of_origin": state,
-        "detected_state" : state,
-        "confidence"     : conf_pct,
-        "yolo_conf"      : round(yolo_conf, 2),
-        "format_valid"   : is_fmt,
-        "format_message" : "Matched" if is_fmt else "Not matched",
-        "plate_format"   : "LLL-DDD-LL" if is_fmt else "INVALID",
-        "state_match"    : state != "Unknown",
-        "lgas"           : [],
-        "raw_ocr_top"    : top_text,
-        "raw_ocr_middle" : mid_text,
-        "raw_ocr_bottom" : bot_text,
-        "all_candidates" : all_candidates[:10],  # send to test_video for voting
+        "detected_state": state,
+        "lga": lga if is_fmt else "Unknown",
+        "confidence": conf,
+        "yolo_conf": round(yolo_conf, 2),
+        "format_valid": is_fmt,
+        "format_message": (
+            "Verified LGA prefix" if (is_strict and prefix_dist == 0)
+            else ("Near-match LGA" if (is_strict and prefix_dist == 1)
+            else ("Strict format" if is_strict
+            else ("Partial read" if is_fmt else "Not matched")))
+        ),
+        "plate_format": "LLL-DDD-LL" if is_strict else ("RAW" if is_fmt else "INVALID"),
+        "state_match": state != "Unknown",
+        "lgas": [lga] if lga != "Unknown" else [],
+        "ocr_engines": eng_dict,
+        "debug_log": debug,
+        "debug_crop": crop_used,
     }
 
-def _make_result(label, msg="Not Found", yolo_conf=0.0):
-    return {
-        "filename"       : label,
-        "plate_number"   : "Not Found",
-        "state_of_origin": "Unknown",
-        "detected_state" : "Unknown",
-        "confidence"     : 0.0,
-        "yolo_conf"      : round(yolo_conf, 2),
-        "format_valid"   : False,
-        "format_message" : msg,
-        "plate_format"   : "INVALID",
-        "state_match"    : False,
-        "lgas"           : [],
-        "raw_ocr_top"    : "",
-        "raw_ocr_middle" : "",
-        "raw_ocr_bottom" : "",
-        "all_candidates" : [],
-    }
+
+# ================================================================
+#  API ROUTES
+# ================================================================
+@app.route("/", methods=["GET"])
+def api_root():
+    return jsonify({
+        "status": "online",
+        "service": "AVLPRDL Engine",
+        "diagnostic": "/api/diagnose"
+    }), 200
 
 # =========================
 # API ROUTES
@@ -931,23 +727,29 @@ def _make_result(label, msg="Not Found", yolo_conf=0.0):
 @app.route("/api/test", methods=["GET"])
 def api_test():
     return jsonify({
-        "status" : "ok",
-        "yolo"   : yolo_model is not None,
-        "ocr"    : ocr is not None,
-        "message": "Backend running ✅",
+        "status": "ok",
+        "yolo_models_loaded": len(yolo_models),
+        "easy": easy_ocr is not None,
+        "engines_loaded": engines_loaded,
+        "lga_prefixes": len(VALID_PREFIXES)
     }), 200
+
 
 @app.route("/api/process-image", methods=["POST"])
 def api_process_image():
-    if "file" not in request.files:
-        return jsonify({"error": "No file field"}), 400
-    upload = request.files["file"]
-    data   = np.frombuffer(upload.read(), dtype=np.uint8)
-    img    = cv2.imdecode(data, cv2.IMREAD_COLOR)
-    if img is None:
-        return jsonify({"error": "Cannot decode image"}), 400
-    result = process_frame(img, label=upload.filename or "image")
-    return jsonify(result), 200
+    try:
+        if "file" not in request.files:
+            return jsonify({"error": "No file field"}), 400
+        upload = request.files["file"]
+        data = np.frombuffer(upload.read(), dtype=np.uint8)
+        img = cv2.imdecode(data, cv2.IMREAD_COLOR)
+        if img is None:
+            return jsonify({"error": "Cannot decode image"}), 400
+        return jsonify(process_frame(img, upload.filename or "image")), 200
+    except Exception as e:
+        traceback.print_exc()
+        return jsonify({"error": str(e)}), 200
+
 
 @app.route("/api/process-video", methods=["POST"])
 def api_process_video():
@@ -955,8 +757,8 @@ def api_process_video():
         return jsonify({"error": "No file field"}), 400
 
     upload = request.files["file"]
-    ext    = os.path.splitext(upload.filename)[-1] or ".mp4"
-    tmp    = tempfile.NamedTemporaryFile(delete=False, suffix=ext)
+    ext = os.path.splitext(upload.filename or "video")[-1] or ".mp4"
+    tmp = tempfile.NamedTemporaryFile(delete=False, suffix=ext)
 
     try:
         upload.save(tmp.name)
@@ -965,57 +767,200 @@ def api_process_video():
         return jsonify({"error": f"Save failed: {e}"}), 500
 
     try:
-        skip  = int(request.form.get("skip_frames", 10))
-        maxf  = int(request.form.get("max_frames",  100))
-        cap   = cv2.VideoCapture(tmp.name)
+        skip = int(request.form.get("skip_frames", 10))
+        maxf = int(request.form.get("max_frames", 100))
+        cap = cv2.VideoCapture(tmp.name)
 
         if not cap.isOpened():
             return jsonify({"error": "Cannot open video"}), 400
 
-        fps   = cap.get(cv2.CAP_PROP_FPS) or 30.0
-        total = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
+        fps = cap.get(cv2.CAP_PROP_FPS) or 30.0
+        total = int(cap.get(cv2.CAP_PROP_FRAME_COUNT)) or -1
 
-        print(f"[VIDEO] total={total}  fps={fps:.1f}  "
-              f"skip={skip}  max={maxf}")
+        results = []
+        seen_plates = []
+        idx = 0
+        proc = 0
 
-        results, idx, proc = [], 0, 0
-
-        while proc < maxf:
+        while proc < maxf and cap.isOpened():
             ret, frame = cap.read()
             if not ret:
                 break
+            if idx % skip == 0:
+                proc += 1
+                r = process_frame(frame, f"Frame {idx} ({idx/fps:.1f}s)")
+                plate = r.get("plate_number", "Not Found")
+                if plate not in ("Not Found", "", None):
+                    duplicate = plate_is_duplicate(plate, seen_plates)
+                    r["is_duplicate"] = duplicate
+                    if not duplicate:
+                        seen_plates.append(plate)
+                results.append(r)
             idx += 1
-            if idx % skip != 0:
-                continue
-            proc += 1
-            ts = idx / fps
-            results.append(
-                process_frame(frame, f"Frame {idx} ({ts:.1f}s)")
-            )
 
         cap.release()
 
+        valid = [r for r in results if r.get("plate_number") not in ("Not Found", "", None)]
+        found = len(valid)
+        best = max(valid, key=lambda r: r.get("confidence", 0)) if valid else None
+
+        return jsonify({
+            "total_frames": total,
+            "processed_frames": proc,
+            "plates_found": found,
+            "unique_plates": len(seen_plates),
+            "best_result": best,
+            "results": results,
+        }), 200
     except Exception as e:
         traceback.print_exc()
         return jsonify({"error": str(e)}), 500
     finally:
         try:
-            os.unlink(tmp.name)
+            if os.path.exists(tmp.name):
+                os.unlink(tmp.name)
         except Exception:
             pass
 
-    found = sum(
-        1 for r in results
-        if r.get("plate_number") not in ("Not Found", "", None)
-    )
-    print(f"[VIDEO] Done  processed={proc}  found={found}")
 
-    return jsonify({
-        "total_frames"    : total,
-        "processed_frames": proc,
-        "plates_found"    : found,
-        "results"         : results,
-    }), 200
+# ================================================================
+#  DIAGNOSE / ALIASES / LIVE-CAMERA AUTO-LOG
+# ================================================================
+@app.route("/api/diagnose", methods=["POST"])
+def api_diagnose():
+    try:
+        img = None
+        if "file" in request.files:
+            upload = request.files["file"]
+            data = np.frombuffer(upload.read(), dtype=np.uint8)
+            img = cv2.imdecode(data, cv2.IMREAD_COLOR)
+        if img is None:
+            return jsonify({"error": "Send image as 'file'"}), 400
+        res = process_frame(img, "DIAGNOSTIC")
+        res["status"] = "diagnostic_complete"
+        return jsonify(res), 200
+    except Exception as e:
+        traceback.print_exc()
+        return jsonify({"error": str(e)}), 200
+
+
+def _get_file():
+    for f in ("file", "frame", "video", "image"):
+        if f in request.files:
+            return request.files[f]
+    return None
+
+
+@app.route("/api/image", methods=["POST"])
+def api_image():
+    """
+    Used by both image uploads and live camera frames.
+    If field name is 'frame', treat as live camera and auto-log to SQLite.
+    """
+    try:
+        upload = _get_file()
+        if not upload:
+            return jsonify({"error": "No file"}), 400
+
+        data = np.frombuffer(upload.read(), dtype=np.uint8)
+        img = cv2.imdecode(data, cv2.IMREAD_COLOR)
+        if img is None:
+            return jsonify({"error": "Cannot decode"}), 400
+
+        # Detect if this is a live camera frame
+        is_live_camera = "frame" in request.files
+        label = upload.filename or ("Live Camera" if is_live_camera else "image")
+
+        result = process_frame(img, label)
+
+        # Auto-log live camera detections to SQLite
+        if is_live_camera and result.get("plate_number") not in ("Not Found", "", None):
+            try:
+                add_or_update_live_detection({
+                    "plate_number":    result["plate_number"],
+                    "state_of_origin": result.get("state_of_origin", "Unknown"),
+                    "confidence":      result.get("confidence", 0),
+                    "filename":        "Live Camera",
+                    "source":          "live-camera",
+                })
+                print(f"  💾 Logged live plate: {result['plate_number']} "
+                      f"(conf={result.get('confidence')}%)")
+            except Exception as e:
+                print(f"  ⚠️ Failed to log live plate: {e}")
+
+        return jsonify(result), 200
+    except Exception as e:
+        traceback.print_exc()
+        return jsonify({"error": str(e)}), 200
+
+
+@app.route("/api/video", methods=["POST"])
+def api_video():
+    return api_process_video()
+
+
+@app.route("/api/connection-test", methods=["GET"])
+def api_connection_test():
+    return api_test()
+
+
+@app.route("/api/dashboard", methods=["GET"])
+def api_dashboard():
+    return jsonify({"total": 0, "states": {}, "avg_confidence": 0, "recent": []}), 200
+
+
+@app.route("/api/live-data", methods=["GET"])
+def api_live_data():
+    try:
+        all_detections = get_live_detections(LIVE_MAX)
+        return jsonify({
+            "recent": all_detections[:10],
+            "live_detections": all_detections,
+            "total": len(all_detections),
+            "timestamp": datetime.utcnow().isoformat() + 'Z'
+        }), 200
+    except Exception as e:
+        traceback.print_exc()
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route("/api/live-data/add", methods=["POST"])
+def api_live_data_add():
+    data = request.get_json() if request.is_json else (request.form.to_dict() or request.values.to_dict() or {})
+    if not data:
+        return jsonify({"error": "No detection data provided"}), 400
+    try:
+        add_or_update_live_detection(data)
+        recent = get_live_detections(10)
+        return jsonify({"status": "ok", "message": "detection added", "recent": recent}), 200
+    except Exception as e:
+        traceback.print_exc()
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route("/api/export-analytics", methods=["GET"])
+def api_export_analytics():
+    try:
+        all_detections = get_live_detections(LIVE_MAX)
+        return jsonify({
+            "data": all_detections,
+            "summary": {"total_records": len(all_detections), "duplicates_filtered": 0}
+        }), 200
+    except Exception:
+        return jsonify({"data": [], "summary": {"duplicates_filtered": 0}}), 200
+
+
+@app.route("/api/clear-logs", methods=["POST"])
+def api_clear_logs():
+    try:
+        conn = db_connect()
+        conn.execute("DELETE FROM live_detections")
+        conn.commit()
+        conn.close()
+        return jsonify({"message": "Logs cleared"}), 200
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
 
 # =========================
 # ENTRY POINT
