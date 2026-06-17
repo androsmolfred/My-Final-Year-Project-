@@ -203,6 +203,9 @@ function App() {
   const processingFrameRef = useRef(false);
   const livePlateSetRef = useRef(new Set());
   const plateVotesRef = useRef(new Map()); // For multi-frame consensus
+  
+  // Ref for local video processing canvas
+  const localVideoCanvasRef = useRef(document.createElement('canvas'));
 
   // ==================== TOAST NOTIFICATION ====================
   const showToast = useCallback((message, type = 'success') => {
@@ -886,6 +889,9 @@ function App() {
       setUploadProgress(5);
       setProcessingStatus('Preparing upload...');
 
+      // =========================================================================
+      // IMAGE UPLOAD LOGIC
+      // =========================================================================
       if (uploadType === 'image') {
         const allResults = [];
         let successCount = 0;
@@ -955,76 +961,125 @@ function App() {
         } else {
           showToast('Processing complete, no plates detected', 'info');
         }
-      } else {
-        setProcessingStatus('Uploading video...');
-        setUploadProgress(15);
-        const formData = new FormData();
-        formData.append('file', files[0]);
-
-        const response = await fetch(`${API_BASE_URL}/api/process-video`, {
-          method: 'POST',
-          body: formData
+      } 
+      // =========================================================================
+      // VIDEO UPLOAD LOGIC (CANVAS EXTRACTION METHOD)
+      // =========================================================================
+      else {
+        setProcessingStatus('Initializing video processing...');
+        setUploadProgress(10);
+        
+        const file = files[0];
+        const videoElement = document.createElement('video');
+        videoElement.src = URL.createObjectURL(file);
+        videoElement.muted = true;
+        
+        await new Promise((resolve) => {
+          videoElement.onloadedmetadata = resolve;
         });
 
-        setUploadProgress(80);
-        setProcessingStatus('Processing video frames...');
+        const canvas = localVideoCanvasRef.current;
+        const ctx = canvas.getContext('2d');
+        canvas.width = videoElement.videoWidth;
+        canvas.height = videoElement.videoHeight;
 
-        if (response.ok) {
-          const data = await response.json();
-          console.log('[VIDEO RESPONSE]', data);
-          let videoRawResults = data.results || [];
-          if (data.best_result && isReadablePlate(data.best_result)) {
-            videoRawResults = [data.best_result, ...videoRawResults];
-          }
-          const normalizedFrames = videoRawResults.map((result) => {
-            const plateFound = isReadablePlate(result);
-            return {
-              filename: result.filename || files[0].name,
-              status: plateFound ? 'processed' : 'not_found',
-              plate_number: plateFound ? result.plate_number : 'Not Found',
-              state_of_origin: getResultState(result),
-              confidence: result.confidence || 0,
-              message: plateFound
-                ? 'License plate detected successfully'
-                : 'No license plate detected',
-              source: 'video-upload',
-              timestamp: new Date().toISOString()
-            };
+        const duration = videoElement.duration;
+        const interval = 1.5; // Snap a frame every 1.5 seconds
+        const totalFramesToExtract = Math.floor(duration / interval);
+        
+        const videoRawResults = [];
+        const seenPlates = new Set();
+        const uniqueFound = [];
+
+        setProcessingStatus(`Extracting and analyzing frames...`);
+
+        // Loop through the video at set intervals
+        for (let currentTime = 0; currentTime < duration; currentTime += interval) {
+          videoElement.currentTime = currentTime;
+          
+          await new Promise((resolve) => {
+            videoElement.onseeked = resolve;
           });
 
-          const uniqueFound = [];
-          const seenPlates = new Set();
-          normalizedFrames.forEach((item) => {
-            if (!isReadablePlate(item)) return;
-            if (!seenPlates.has(item.plate_number)) {
-              seenPlates.add(item.plate_number);
-              uniqueFound.push(item);
+          // Draw the current video frame to our invisible canvas
+          ctx.drawImage(videoElement, 0, 0, canvas.width, canvas.height);
+          
+          // Convert canvas frame to a lightweight blob
+          const blob = await new Promise((resolve) => canvas.toBlob(resolve, 'image/jpeg', 0.90));
+          
+          // Send the individual frame to the working /api/image endpoint
+          const formData = new FormData();
+          formData.append('file', blob, `frame-${currentTime}.jpg`);
+
+          try {
+            const response = await fetch(`${API_BASE_URL}/api/image`, {
+              method: 'POST',
+              body: formData
+            });
+
+            if (response.ok) {
+              const data = await response.json();
+              
+              if (isReadablePlate(data)) {
+                videoRawResults.push(data);
+                
+                if (!seenPlates.has(data.plate_number)) {
+                  seenPlates.add(data.plate_number);
+                  uniqueFound.push({
+                    filename: file.name,
+                    status: 'processed',
+                    plate_number: data.plate_number,
+                    state_of_origin: getResultState(data),
+                    confidence: data.confidence || 0,
+                    message: 'License plate detected successfully',
+                    source: 'video-upload',
+                    timestamp: new Date().toISOString()
+                  });
+                }
+              }
             }
-          });
-
-          const finalResults = uniqueFound.length > 0 ? uniqueFound : normalizedFrames;
-          setUploadProgress(100);
-          setProcessingStatus('Complete!');
-          setResults(finalResults);
-          const logged = logReadPlates(uniqueFound);
-
-          if (uniqueFound.length > 0) {
-            showToast(`Found ${uniqueFound.length} plate(s). Logged ${logged.length} new.`, 'success');
-          } else {
-            showToast('Video processed, no plates found', 'info');
+          } catch (err) {
+            console.error(`Error analyzing frame at ${currentTime}s`, err);
           }
+
+          // Update progress bar
+          const progress = 10 + Math.round((currentTime / duration) * 80);
+          setUploadProgress(progress);
+        }
+
+        // Clean up memory
+        URL.revokeObjectURL(videoElement.src);
+        
+        // Finalize results
+        setUploadProgress(100);
+        setProcessingStatus('Video analysis complete!');
+        
+        // If nothing was found, output a dummy "Not Found" result for the UI
+        const finalResults = uniqueFound.length > 0 ? uniqueFound : [{
+          filename: file.name,
+          status: 'not_found',
+          plate_number: 'Not Found',
+          state_of_origin: 'Unknown',
+          confidence: 0,
+          message: 'No license plate detected in video',
+          source: 'video-upload',
+          timestamp: new Date().toISOString()
+        }];
+
+        setResults(finalResults);
+        const logged = logReadPlates(uniqueFound);
+
+        if (uniqueFound.length > 0) {
+          showToast(`Found ${uniqueFound.length} unique plate(s). Logged ${logged.length} new.`, 'success');
         } else {
-          const errorData = await response.json().catch(() => ({}));
-          setError(errorData.error || 'Upload failed');
-          setShowErrorModal(true);
-          showToast('Failed to process video', 'error');
+          showToast('Video processed, no plates found', 'info');
         }
       }
 
       fetchDashboardData();
     } catch (err) {
       console.error('Upload error:', err);
-      setError('Network error. Check if backend is running at http://localhost:5000');
+      setError('Network error. Check if backend is running.');
       setShowErrorModal(true);
       showToast('Network error', 'error');
     } finally {
