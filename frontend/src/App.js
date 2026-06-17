@@ -20,7 +20,7 @@ import {
 } from 'lucide-react';
 
 // ==================== API CONFIGURATION ====================
-const API_BASE_URL = 'http://localhost:5000';
+const API_BASE_URL = import.meta.env.VITE_API_URL;
 const LIVE_POLL_INTERVAL = 2000;
 const CAMERA_TIMEOUT_MS = 8000;
 
