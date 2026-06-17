@@ -20,7 +20,7 @@ import {
 } from 'lucide-react';
 
 // ==================== API CONFIGURATION ====================
-const API_BASE_URL = import.meta.env.VITE_API_URL;
+const API_BASE_URL = 'https://wurdboss-avlprdl-backend.hf.space';
 const LIVE_POLL_INTERVAL = 2000;
 const CAMERA_TIMEOUT_MS = 8000;
 
