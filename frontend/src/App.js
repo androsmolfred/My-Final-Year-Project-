@@ -26,7 +26,7 @@ const CAMERA_TIMEOUT_MS = 8000;
 
 // ==================== VOTING CONFIGURATION ====================
 const VOTE_THRESHOLD = 2;       // Need this many matching reads to confirm
-const VOTE_WINDOW_MS = 5000;    // Within this time window
+const VOTE_WINDOW_MS = 15000;   // INCREASED: Gives the cloud server enough time to process 2 frames
 
 // ==================== LOCAL READ PLATE LOGGING ====================
 const READ_PLATE_LOGS_KEY = 'avlprdl_read_plate_logs';
